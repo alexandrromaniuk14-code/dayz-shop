@@ -135,6 +135,7 @@ const ROULETTE_ITEM_WIDTH = 168
 const ROULETTE_ITEM_GAP = 16
 const ROULETTE_ITEM_STEP = ROULETTE_ITEM_WIDTH + ROULETTE_ITEM_GAP
 const ROULETTE_LANDING_INDEX = 52
+const ROULETTE_PRICE = 120
 const API_BASE_URL = "https://dayz-shop.onrender.com"
 const AUTH_TOKEN_STORAGE_KEY = "redmoonAuthToken"
 const STEAM_ID_STORAGE_KEY = "redmoonSteamId"
@@ -220,6 +221,7 @@ const [isTransferSubmitting, setIsTransferSubmitting] = useState(false)
 const [rouletteItems, setRouletteItems] = useState(() => buildRouletteItems())
 const [rouletteOffset, setRouletteOffset] = useState(0)
 const [isRouletteSpinning, setIsRouletteSpinning] = useState(false)
+const [isRouletteOpening, setIsRouletteOpening] = useState(false)
 const [roulettePrize, setRoulettePrize] = useState(null)
 const [rouletteDrops, setRouletteDrops] = useState([])
 const [rouletteSettled, setRouletteSettled] = useState(false)
@@ -346,67 +348,113 @@ const addPaymentsToHistory = (payments) => {
   })
 }
 
-const saveRouletteDrop = (prize) => {
-  fetch("https://dayz-shop.onrender.com/api/roulette/drops", {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      steamId: user?.id,
-      username: user?.displayName,
-      avatar: user?.photos?.[2]?.value || user?.photos?.[0]?.value,
-      productName: prize.name,
-      productPrice: prize.priceValue
-    })
-  })
-    .then((res) => res.json())
-    .then((drop) => {
-      if (drop?.id) {
-        setRouletteDrops((currentDrops) => [
-          drop,
-          ...currentDrops.filter((item) => item.id !== drop.id)
-        ].slice(0, 7))
-      }
-    })
-    .catch((err) => {
-      console.log("ROULETTE DROP SAVE ERROR:", err)
-    })
+const hydrateRoulettePrize = (prize) => {
+  const prizeName = prize?.name || prize?.productName
+  const matchedProduct = [...products, ...customProducts].find((product) => product.name === prizeName)
+  const priceValue = Number(prize?.priceValue || prize?.productPrice || matchedProduct?.priceValue || 0)
+
+  return {
+    ...(matchedProduct || {}),
+    name: prizeName,
+    price: matchedProduct?.price || prize?.price || `${priceValue}₽`,
+    priceValue,
+    image: matchedProduct?.image || bannerImg
+  }
 }
 
 const spinRoulette = () => {
-  if (isRouletteSpinning) return
+  if (isRouletteSpinning || isRouletteOpening) return
 
-  const prizePool = getRoulettePrizePool()
-  const prize = prizePool[Math.floor(Math.random() * prizePool.length)]
-  const nextItems = buildRouletteItems()
-  nextItems[ROULETTE_LANDING_INDEX] = prize
+  if (!user?.id) {
+    showProfileNotice("Войдите через Steam перед рулеткой", "error")
+    return
+  }
 
-  const targetOffset =
-    ROULETTE_LANDING_INDEX * ROULETTE_ITEM_STEP +
-    ROULETTE_ITEM_WIDTH / 2
+  if (balance < ROULETTE_PRICE) {
+    showProfileNotice("Недостаточно средств для рулетки", "error")
+    setDepositAmount(ROULETTE_PRICE)
+    setDepositBonus(0)
+    setPage("deposit")
+    window.scrollTo({ top: 0, behavior: "smooth" })
+    return
+  }
 
-  clearTimeout(spinStartTimerRef.current)
-  clearTimeout(spinResultTimerRef.current)
+  setIsRouletteOpening(true)
 
-  setRoulettePrize(null)
-  setRouletteSettled(false)
-  setRouletteItems(nextItems)
-  setRouletteOffset(0)
-  setIsRouletteSpinning(false)
+  authorizedFetch(`${API_BASE_URL}/api/roulette/spin`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    }
+  })
+    .then((res) =>
+      res.json().then((data) => ({
+        ok: res.ok,
+        data
+      }))
+    )
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showProfileNotice(data.error || "Не удалось открыть рулетку", "error")
 
-  spinStartTimerRef.current = setTimeout(() => {
-    setIsRouletteSpinning(true)
-    setRouletteOffset(Math.max(targetOffset, 0))
-  }, 80)
+        if ((data.error || "").includes("Недостаточно")) {
+          setBalance(data.balance ?? balance)
+          setDepositAmount(ROULETTE_PRICE)
+          setDepositBonus(0)
+          setPage("deposit")
+          window.scrollTo({ top: 0, behavior: "smooth" })
+        }
 
-  spinResultTimerRef.current = setTimeout(() => {
-    setIsRouletteSpinning(false)
-    setRoulettePrize(prize)
-    setRouletteSettled(true)
-    saveRouletteDrop(prize)
-  }, 5400)
+        return
+      }
+
+      const prize = hydrateRoulettePrize(data.prize)
+      const nextItems = buildRouletteItems()
+      nextItems[ROULETTE_LANDING_INDEX] = prize
+
+      const targetOffset =
+        ROULETTE_LANDING_INDEX * ROULETTE_ITEM_STEP +
+        ROULETTE_ITEM_WIDTH / 2
+
+      clearTimeout(spinStartTimerRef.current)
+      clearTimeout(spinResultTimerRef.current)
+
+      setBalance(data.balance)
+      addPurchasesToHistory(data.purchase)
+      addPaymentsToHistory(data.payment)
+
+      if (data.drop?.id) {
+        setRouletteDrops((currentDrops) => [
+          data.drop,
+          ...currentDrops.filter((item) => item.id !== data.drop.id)
+        ].slice(0, 7))
+      }
+
+      setRoulettePrize(null)
+      setRouletteSettled(false)
+      setRouletteItems(nextItems)
+      setRouletteOffset(0)
+      setIsRouletteSpinning(false)
+
+      spinStartTimerRef.current = setTimeout(() => {
+        setIsRouletteSpinning(true)
+        setRouletteOffset(Math.max(targetOffset, 0))
+      }, 80)
+
+      spinResultTimerRef.current = setTimeout(() => {
+        setIsRouletteSpinning(false)
+        setRoulettePrize(prize)
+        setRouletteSettled(true)
+        showProfileNotice(`${prize.name} выпал как приз рулетки`)
+      }, 5400)
+    })
+    .catch((err) => {
+      console.log("ROULETTE SPIN ERROR:", err)
+      showProfileNotice("Ошибка при открытии рулетки", "error")
+    })
+    .finally(() => {
+      setIsRouletteOpening(false)
+    })
 }
 
 useEffect(() => {
@@ -690,6 +738,7 @@ const cartTotal = cart.reduce(
   (sum, item) => sum + item.priceValue * (item.quantity || 1),
   0
 )
+const hasRouletteFunds = balance >= ROULETTE_PRICE
 
 const depositOptions = [
   { amount: 100, bonus: 0 },
@@ -2583,7 +2632,7 @@ margin: "0 auto",
     cursor: "pointer"
   }}
 >
-  {product.type === "roulette" ? "Открыть рулетку" : "Купить"}
+  {product.type === "roulette" ? `Открыть за ${product.price}` : "Купить"}
 </button>
     </div>
   ))}
@@ -2645,15 +2694,27 @@ margin: "0 auto",
       <div className="roulette-controls-row">
         <div className="roulette-cost-card">
           <span>СТОИМОСТЬ КРУТКИ</span>
-          <strong>120 ₽</strong>
+          <strong>{ROULETTE_PRICE} ₽</strong>
           <button
             className="roulette-spin-button"
             onClick={spinRoulette}
-            disabled={isRouletteSpinning}
+            disabled={isRouletteSpinning || isRouletteOpening}
           >
-            {isRouletteSpinning ? "КРУТИТСЯ..." : "КРУТИТЬ РУЛЕТКУ"}
+            {isRouletteOpening
+              ? "ОТКРЫВАЕМ..."
+              : isRouletteSpinning
+                ? "КРУТИТСЯ..."
+                : !user?.id
+                  ? "ВОЙТИ ЧЕРЕЗ STEAM"
+                  : hasRouletteFunds
+                    ? `КРУТИТЬ ЗА ${ROULETTE_PRICE} ₽`
+                    : "ПОПОЛНИТЬ БАЛАНС"}
           </button>
-          <em>У вас: {balance} ₽</em>
+          <em>
+            {hasRouletteFunds
+              ? `У вас: ${balance} ₽`
+              : `У вас: ${balance} ₽. Нужно ${ROULETTE_PRICE} ₽`}
+          </em>
         </div>
 
       </div>
@@ -2665,35 +2726,9 @@ margin: "0 auto",
             <strong>{roulettePrize.name}</strong>
             <em>{roulettePrize.price}</em>
           </div>
-          <button
-            className="roulette-cart-button"
-            onClick={() => {
-              setCart((currentCart) => {
-                const existingItem = currentCart.find((item) => item.name === roulettePrize.name)
-
-                if (existingItem) {
-                  return currentCart.map((item) =>
-                    item.name === roulettePrize.name
-                      ? { ...item, quantity: (item.quantity || 1) + 1 }
-                      : item
-                  )
-                }
-
-                return [...currentCart, { ...roulettePrize, quantity: 1 }]
-              })
-
-              setMessage({
-                type: "success",
-                text: `${roulettePrize.name} добавлен в корзину`
-              })
-
-              setTimeout(() => {
-                setMessage(null)
-              }, 2500)
-            }}
-          >
-            Добавить в корзину
-          </button>
+          <div className="roulette-prize-note">
+            Приз уже записан в покупки. Доплачивать за него не нужно.
+          </div>
         </div>
       )}
 

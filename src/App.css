@@ -1257,6 +1257,15 @@ align-self: center;
   filter: brightness(0.78);
 }
 
+.roulette-prize-note {
+  max-width: 230px;
+  color: rgba(255,255,255,0.72);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: right;
+}
+
 .roulette-chances-button {
   justify-self: start;
   min-height: 48px;
@@ -1414,6 +1423,11 @@ align-self: center;
   .roulette-spin-button,
   .roulette-cart-button {
     width: 100%;
+  }
+
+  .roulette-prize-note {
+    max-width: none;
+    text-align: left;
   }
 
   .roulette-history-list {
