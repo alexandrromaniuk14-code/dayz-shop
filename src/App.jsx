@@ -1396,7 +1396,7 @@ paddingTop: "120px"
   <button
     className="login-button"
     onClick={() => {
-      window.location.href = "https://redmoon-dayz.ru/auth/steam"
+      window.location.href = "https://dayz-shop.onrender.com/auth/steam"
     }}
   >
     Авторизоваться
@@ -1413,7 +1413,7 @@ paddingTop: "120px"
         <p>Войди через Steam аккаунт с ID 76561198722502186.</p>
         <button
           onClick={() => {
-            window.location.href = "https://redmoon-dayz.ru/auth/steam"
+            window.location.href = "https://dayz-shop.onrender.com/auth/steam"
           }}
         >
           Авторизоваться
@@ -2148,7 +2148,7 @@ paddingTop: "120px"
         <button
           className="profile-logout"
           onClick={() => {
-            window.location.href = "https://redmoon-dayz.ru/auth/logout"
+            window.location.href = "https://dayz-shop.onrender.com/auth/logout"
           }}
         >
           Выйти

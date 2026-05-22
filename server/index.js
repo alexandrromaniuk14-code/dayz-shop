@@ -9,6 +9,8 @@ const fs = require("fs")
 const db = require("./database")
 
 const app = express()
+
+app.set("trust proxy", 1)
 const FRONTEND_URL = "https://redmoon-dayz.ru"
 const ADMIN_STEAM_IDS = new Set(["76561198722502186"])
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || ""
@@ -432,7 +434,13 @@ app.use(cors({
 app.use(session({
   secret: "redmoon_secret",
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    maxAge: 1000 * 60 * 60 * 24 * 7
+  }
 }))
 
 app.use(passport.initialize())
