@@ -1883,7 +1883,9 @@ app.post("/api/roulette/spin", (req, res) => {
 
   getRoulettePrize((err, prize) => {
     if (err) {
-      return res.status(500).json({ error: err.message })
+      const status = err.message.includes("Нет доступных призов") ? 409 : 500
+
+      return res.status(status).json({ error: err.message })
     }
 
     ensureUser(steamId, username, (err) => {
