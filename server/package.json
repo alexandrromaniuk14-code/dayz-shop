@@ -17,6 +17,6 @@
     "multer": "^2.1.1",
     "passport": "^0.7.0",
     "passport-steam": "^1.0.18",
-    "sqlite3": "^6.0.1"
+    "sqlite3": "^5.1.7"
   }
 }
