@@ -1302,7 +1302,7 @@ app.patch("/api/admin/promocodes/:id", requireAdmin, (req, res) => {
 })
 
 app.get("/api/purchases/:steamId", (req, res) => {
-  const steamId = req.user?.id || req.params.steamId
+  const steamId = getRequestSteamId(req) || req.params.steamId
 
   if (!steamId) {
     return res.status(401).json({ error: "Войдите через Steam" })
@@ -1326,10 +1326,219 @@ app.get("/api/purchases/:steamId", (req, res) => {
   )
 })
 
+app.get("/api/payments/:steamId", (req, res) => {
+  const requestedSteamId = String(req.params.steamId || "")
+  const currentSteamId = getRequestSteamId(req)
+
+  if (!currentSteamId) {
+    return res.status(401).json({ error: "Войдите через Steam" })
+  }
+
+  if (requestedSteamId !== currentSteamId && !isAdminSteamId(currentSteamId)) {
+    return res.status(403).json({ error: "Можно смотреть только свои операции" })
+  }
+
+  db.all(
+    `
+    SELECT *
+    FROM payments
+    WHERE steamId = ?
+    ORDER BY id DESC
+    LIMIT 100
+    `,
+    [requestedSteamId],
+    (err, payments) => {
+      if (err) {
+        return res.status(500).json({ error: err.message })
+      }
+
+      res.json(payments)
+    }
+  )
+})
+
+app.post("/api/transfer", (req, res) => {
+  const senderSteamId = getRequestSteamId(req)
+  const senderUser = getRequestUser(req)
+  const recipientSteamId = String(req.body.recipientSteamId || req.body.toSteamId || "").trim()
+  const amount = Math.floor(Number(req.body.amount || 0))
+  const steamIdPattern = /^\d{17}$/
+
+  if (!senderSteamId) {
+    return res.status(401).json({ error: "Войдите через Steam" })
+  }
+
+  if (!steamIdPattern.test(recipientSteamId)) {
+    return res.status(400).json({ error: "Укажи корректный SteamID64 получателя" })
+  }
+
+  if (recipientSteamId === senderSteamId) {
+    return res.status(400).json({ error: "Нельзя переводить средства самому себе" })
+  }
+
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return res.status(400).json({ error: "Сумма перевода должна быть положительным числом" })
+  }
+
+  const createdAt = new Date().toISOString()
+  const senderName = senderUser?.displayName || senderUser?.username || "Steam пользователь"
+
+  ensureUser(senderSteamId, senderName, (err) => {
+    if (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    db.serialize(() => {
+        db.run("BEGIN IMMEDIATE")
+
+        const rollback = (status, error) => {
+          db.run("ROLLBACK", () => {
+            res.status(status).json({ error })
+          })
+        }
+
+        db.run(
+          `
+          UPDATE users
+          SET balance = balance - ?
+          WHERE steamId = ? AND balance >= ?
+          `,
+          [amount, senderSteamId, amount],
+          function (err) {
+            if (err) {
+              return rollback(500, err.message)
+            }
+
+            if (this.changes === 0) {
+              return rollback(400, "Недостаточно средств на балансе")
+            }
+
+            db.run(
+              `
+              INSERT OR IGNORE INTO users (steamId, username, balance)
+              VALUES (?, ?, 0)
+              `,
+              [recipientSteamId, "Transfer recipient"],
+              (err) => {
+                if (err) {
+                  return rollback(500, err.message)
+                }
+
+                db.run(
+                  `
+                  UPDATE users
+                  SET balance = balance + ?
+                  WHERE steamId = ?
+                  `,
+                  [amount, recipientSteamId],
+                  (err) => {
+                    if (err) {
+                      return rollback(500, err.message)
+                    }
+
+                    db.run(
+                  `
+                  INSERT INTO payments (steamId, amount, status, type, note, createdAt)
+                  VALUES (?, ?, ?, ?, ?, ?)
+                  `,
+                  [
+                    senderSteamId,
+                    -amount,
+                    "paid",
+                    "transfer-out",
+                    `Перевод игроку ${recipientSteamId}`,
+                    createdAt
+                  ],
+                  function (err) {
+                    if (err) {
+                      return rollback(500, err.message)
+                    }
+
+                    const senderPaymentId = this.lastID
+
+                    db.run(
+                      `
+                      INSERT INTO payments (steamId, amount, status, type, note, createdAt)
+                      VALUES (?, ?, ?, ?, ?, ?)
+                      `,
+                      [
+                        recipientSteamId,
+                        amount,
+                        "paid",
+                        "transfer-in",
+                        `Перевод от игрока ${senderSteamId}`,
+                        createdAt
+                      ],
+                      function (err) {
+                        if (err) {
+                          return rollback(500, err.message)
+                        }
+
+                        const recipientPaymentId = this.lastID
+
+                        db.get(
+                          "SELECT balance FROM users WHERE steamId = ?",
+                          [senderSteamId],
+                          (err, userRow) => {
+                            if (err) {
+                              return rollback(500, err.message)
+                            }
+
+                            db.run("COMMIT", (err) => {
+                              if (err) {
+                                return res.status(500).json({ error: err.message })
+                              }
+
+                              const balance = Number(userRow?.balance || 0)
+                              const senderPayment = {
+                                id: senderPaymentId,
+                                steamId: senderSteamId,
+                                amount: -amount,
+                                status: "paid",
+                                type: "transfer-out",
+                                note: `Перевод игроку ${recipientSteamId}`,
+                                createdAt
+                              }
+
+                              res.json({
+                                success: true,
+                                amount,
+                                balance,
+                                recipientSteamId,
+                                senderPayment,
+                                recipientPayment: {
+                                  id: recipientPaymentId,
+                                  steamId: recipientSteamId,
+                                  amount,
+                                  status: "paid",
+                                  type: "transfer-in",
+                                  note: `Перевод от игрока ${senderSteamId}`,
+                                  createdAt
+                                }
+                              })
+                              sendDiscordNotification(`REDMOON: ${senderSteamId} перевел ${amount} ₽ игроку ${recipientSteamId}`)
+                            })
+                          }
+                        )
+                      }
+                    )
+                  }
+                    )
+                  }
+                )
+              }
+            )
+          }
+        )
+    })
+  })
+})
+
 app.post("/api/purchase", (req, res) => {
   const { steamId, productName } = req.body
-  const currentSteamId = req.user?.id || steamId
-  const username = req.user?.displayName || "Unknown"
+  const requestUser = getRequestUser(req)
+  const currentSteamId = getRequestSteamId(req) || steamId
+  const username = requestUser?.displayName || "Unknown"
 
   if (!currentSteamId) {
     return res.status(401).json({ error: "Войдите через Steam" })
@@ -1431,8 +1640,9 @@ app.post("/api/purchase", (req, res) => {
 
 app.post("/api/purchase/cart", (req, res) => {
   const { steamId, items } = req.body
-  const currentSteamId = req.user?.id || steamId
-  const username = req.user?.displayName || "Unknown"
+  const requestUser = getRequestUser(req)
+  const currentSteamId = getRequestSteamId(req) || steamId
+  const username = requestUser?.displayName || "Unknown"
 
   if (!currentSteamId) {
     return res.status(401).json({ error: "Войдите через Steam" })

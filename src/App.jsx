@@ -175,6 +175,18 @@ const normalizeUser = (data) => {
   }
 }
 
+const normalizePayment = (payment) => ({
+  id: payment.id,
+  amount: Number(payment.amount || 0),
+  status: payment.status || "pending",
+  type: payment.type || "payment",
+  note: payment.note || "Операция по балансу",
+  createdAt: payment.createdAt,
+  date: payment.createdAt
+    ? new Date(payment.createdAt).toLocaleString("ru-RU")
+    : "Дата не указана"
+})
+
 const getRoulettePrizePool = () =>
   products.filter((product) => product.type !== "roulette")
 
@@ -203,6 +215,8 @@ const [promoCode, setPromoCode] = useState("")
 const [transferSteamId, setTransferSteamId] = useState("")
 const [transferAmount, setTransferAmount] = useState("")
 const [purchaseHistory, setPurchaseHistory] = useState([])
+const [paymentHistory, setPaymentHistory] = useState([])
+const [isTransferSubmitting, setIsTransferSubmitting] = useState(false)
 const [rouletteItems, setRouletteItems] = useState(() => buildRouletteItems())
 const [rouletteOffset, setRouletteOffset] = useState(0)
 const [isRouletteSpinning, setIsRouletteSpinning] = useState(false)
@@ -311,6 +325,22 @@ const addPurchasesToHistory = (purchases) => {
 
     return [
       ...uniquePurchases,
+      ...currentHistory
+    ]
+  })
+}
+
+const addPaymentsToHistory = (payments) => {
+  const nextPayments = (Array.isArray(payments) ? payments : [payments])
+    .filter(Boolean)
+    .map(normalizePayment)
+
+  setPaymentHistory((currentHistory) => {
+    const currentIds = new Set(currentHistory.map((item) => item.id))
+    const uniquePayments = nextPayments.filter((item) => !currentIds.has(item.id))
+
+    return [
+      ...uniquePayments,
       ...currentHistory
     ]
   })
@@ -524,6 +554,32 @@ useEffect(() => {
     window.history.replaceState({}, "", nextUrl)
   }
 
+  const loadPurchaseHistory = (steamId) => {
+    authorizedFetch(`${API_BASE_URL}/api/purchases/${steamId}`)
+      .then((res) => res.json())
+      .then((purchases) => {
+        if (Array.isArray(purchases)) {
+          setPurchaseHistory(purchases.map(normalizePurchase))
+        }
+      })
+      .catch((err) => {
+        console.log("PURCHASE HISTORY ERROR:", err)
+      })
+  }
+
+  const loadPaymentHistory = (steamId) => {
+    authorizedFetch(`${API_BASE_URL}/api/payments/${steamId}`)
+      .then((res) => res.json())
+      .then((payments) => {
+        if (Array.isArray(payments)) {
+          setPaymentHistory(payments.map(normalizePayment))
+        }
+      })
+      .catch((err) => {
+        console.log("PAYMENT HISTORY ERROR:", err)
+      })
+  }
+
   const loadUserBySteamId = (steamId) => {
     if (!steamId) {
       setUser(null)
@@ -546,18 +602,8 @@ useEffect(() => {
         setUser(null)
       })
 
-    fetch(`https://dayz-shop.onrender.com/api/purchases/${steamId}`, {
-      credentials: "include"
-    })
-      .then((res) => res.json())
-      .then((purchases) => {
-        if (Array.isArray(purchases)) {
-          setPurchaseHistory(purchases.map(normalizePurchase))
-        }
-      })
-      .catch((err) => {
-        console.log("PURCHASE HISTORY ERROR:", err)
-      })
+    loadPurchaseHistory(steamId)
+    loadPaymentHistory(steamId)
   }
 
   authorizedFetch("https://dayz-shop.onrender.com/api/user")
@@ -580,18 +626,8 @@ useEffect(() => {
       }
     })
 
-  fetch(`https://dayz-shop.onrender.com/api/purchases/${normalizedUser.id}`, {
-    credentials: "include"
-  })
-    .then((res) => res.json())
-    .then((purchases) => {
-      if (Array.isArray(purchases)) {
-        setPurchaseHistory(purchases.map(normalizePurchase))
-      }
-    })
-    .catch((err) => {
-      console.log("PURCHASE HISTORY ERROR:", err)
-    })
+  loadPurchaseHistory(normalizedUser.id)
+  loadPaymentHistory(normalizedUser.id)
 } else if (savedSteamId) {
   loadUserBySteamId(savedSteamId)
 }
@@ -763,6 +799,76 @@ const handlePromoRedeem = () => {
     .catch((err) => {
       console.log("PROMOCODE ERROR:", err)
       showProfileNotice("Ошибка при активации промокода", "error")
+    })
+}
+
+const handleTransferSubmit = () => {
+  const recipientSteamId = transferSteamId.trim()
+  const amount = Math.floor(Number(transferAmount || 0))
+
+  if (isTransferSubmitting) return
+
+  if (!user?.id) {
+    showProfileNotice("Войдите через Steam перед переводом", "error")
+    return
+  }
+
+  if (!/^\d{17}$/.test(recipientSteamId)) {
+    showProfileNotice("Укажите корректный SteamID64 получателя", "error")
+    return
+  }
+
+  if (recipientSteamId === user.id) {
+    showProfileNotice("Нельзя переводить средства самому себе", "error")
+    return
+  }
+
+  if (!amount || amount <= 0) {
+    showProfileNotice("Введите сумму перевода", "error")
+    return
+  }
+
+  if (amount > balance) {
+    showProfileNotice("Недостаточно средств на балансе", "error")
+    return
+  }
+
+  setIsTransferSubmitting(true)
+
+  authorizedFetch(`${API_BASE_URL}/api/transfer`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      recipientSteamId,
+      amount
+    })
+  })
+    .then((res) =>
+      res.json().then((data) => ({
+        ok: res.ok,
+        data
+      }))
+    )
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showProfileNotice(data.error || "Не удалось выполнить перевод", "error")
+        return
+      }
+
+      setBalance(data.balance)
+      setTransferSteamId("")
+      setTransferAmount("")
+      addPaymentsToHistory(data.senderPayment)
+      showProfileNotice(`Перевод выполнен: ${data.amount} ₽`)
+    })
+    .catch((err) => {
+      console.log("TRANSFER ERROR:", err)
+      showProfileNotice("Ошибка при переводе средств", "error")
+    })
+    .finally(() => {
+      setIsTransferSubmitting(false)
     })
 }
 
@@ -2170,9 +2276,36 @@ paddingTop: "120px"
           {profileTab === "payments" && (
             <>
               <h3>Платежи</h3>
-              <div className="profile-empty-state">
-                История платежей появится после подключения списка платежей из backend.
-              </div>
+              {paymentHistory.length === 0 ? (
+                <div className="profile-empty-state">
+                  Операций пока нет. Пополнения, переводы и ручные начисления появятся здесь.
+                </div>
+              ) : (
+                <div className="profile-table-wrap">
+                  <table className="profile-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Операция</th>
+                        <th>Сумма</th>
+                        <th>Статус</th>
+                        <th>Дата</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paymentHistory.map((item, index) => (
+                        <tr key={item.id}>
+                          <td>{index + 1}</td>
+                          <td>{item.note}</td>
+                          <td>{item.amount > 0 ? `+${item.amount}` : item.amount} ₽</td>
+                          <td>{item.status}</td>
+                          <td>{item.date}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <button
                 className="profile-inline-button"
                 onClick={() => setPage("deposit")}
@@ -2219,9 +2352,10 @@ paddingTop: "120px"
                   placeholder="Сумма"
                 />
                 <button
-                  onClick={() => showProfileNotice("Переводы пока не подключены", "error")}
+                  onClick={handleTransferSubmit}
+                  disabled={isTransferSubmitting}
                 >
-                  Отправить
+                  {isTransferSubmitting ? "Отправляем..." : "Отправить"}
                 </button>
               </div>
             </>
