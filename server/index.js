@@ -20,6 +20,7 @@ const uploadsDir = path.join(__dirname, "uploads")
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 120
+const ROULETTE_EXCLUDED_PRODUCT_NAMES = new Set([ROULETTE_PRODUCT_NAME, "VIP-слот"])
 const promocodes = {
   REDMOONSTART: 100,
   REDMOONSUMMER: 100,
@@ -203,19 +204,10 @@ const getDiscountedPrice = (price, discountPercent) => {
 
 const isRoulettePrizeProduct = (product) => {
   const price = getDiscountedPrice(product?.price, product?.discountPercent)
-  const text = [
-    product?.name,
-    product?.description,
-    product?.category
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase()
 
   if (!product?.name || price <= 0) return false
-  if (product.name === ROULETTE_PRODUCT_NAME) return false
 
-  return !["vip", "вип", "пропуск", "слот"].some((marker) => text.includes(marker))
+  return !ROULETTE_EXCLUDED_PRODUCT_NAMES.has(product.name)
 }
 
 const formatPurchase = (purchase) => ({
@@ -327,6 +319,23 @@ const normalizeCartItems = (items, callback) => {
 }
 
 const getRoulettePrizeProducts = (callback) => {
+  const prizeMap = new Map()
+
+  Object.entries(productCatalog).forEach(([name, price], index) => {
+    const product = {
+      id: `static-${index}`,
+      name,
+      price,
+      discountPercent: 0,
+      isActive: 1,
+      sortOrder: index
+    }
+
+    if (isRoulettePrizeProduct(product)) {
+      prizeMap.set(name, product)
+    }
+  })
+
   db.all(
     `
     SELECT *
@@ -341,7 +350,13 @@ const getRoulettePrizeProducts = (callback) => {
         return
       }
 
-      callback(null, products.filter(isRoulettePrizeProduct))
+      products
+        .filter(isRoulettePrizeProduct)
+        .forEach((product) => {
+          prizeMap.set(product.name, product)
+        })
+
+      callback(null, Array.from(prizeMap.values()))
     }
   )
 }

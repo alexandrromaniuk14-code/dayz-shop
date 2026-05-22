@@ -137,6 +137,7 @@ const ROULETTE_ITEM_STEP = ROULETTE_ITEM_WIDTH + ROULETTE_ITEM_GAP
 const ROULETTE_LANDING_INDEX = 52
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 120
+const ROULETTE_EXCLUDED_PRODUCT_NAMES = new Set([ROULETTE_PRODUCT_NAME, "VIP-слот"])
 const API_BASE_URL = "https://dayz-shop.onrender.com"
 const AUTH_TOKEN_STORAGE_KEY = "redmoonAuthToken"
 const STEAM_ID_STORAGE_KEY = "redmoonSteamId"
@@ -190,20 +191,11 @@ const normalizePayment = (payment) => ({
 })
 
 const isRoulettePrizeProduct = (product) => {
-  const text = [
-    product?.name,
-    product?.description,
-    Array.isArray(product?.category) ? product.category.join(" ") : product?.category
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase()
   const priceValue = Number(product?.priceValue || product?.oldPriceValue || 0)
 
   if (!product?.name || priceValue <= 0) return false
-  if (product.type === "roulette" || product.name === ROULETTE_PRODUCT_NAME) return false
 
-  return !["vip", "вип", "пропуск", "слот"].some((marker) => text.includes(marker))
+  return !ROULETTE_EXCLUDED_PRODUCT_NAMES.has(product.name)
 }
 
 const getRoulettePrizePool = (items) =>
@@ -245,7 +237,6 @@ const [rouletteDrops, setRouletteDrops] = useState([])
 const [rouletteSettled, setRouletteSettled] = useState(false)
 const [isPurchasing, setIsPurchasing] = useState(false)
 const [customProducts, setCustomProducts] = useState([])
-const [roulettePrizeProducts, setRoulettePrizeProducts] = useState([])
 const [adminProducts, setAdminProducts] = useState([])
 const [adminUsers, setAdminUsers] = useState([])
 const [adminPurchases, setAdminPurchases] = useState([])
@@ -285,11 +276,9 @@ const [isAdminImageDragging, setIsAdminImageDragging] = useState(false)
 const rouletteViewportRef = useRef(null)
 const spinStartTimerRef = useRef(null)
 const spinResultTimerRef = useRef(null)
-const roulettePrizePool = getRoulettePrizePool(roulettePrizeProducts)
-const hasRoulettePrizes = roulettePrizePool.length > 0
 
 const getRouletteDropImage = (drop) =>
-  [...roulettePrizeProducts, ...products, ...customProducts].find((product) => product.name === drop.productName)?.image || bannerImg
+  [...customProducts, ...products].find((product) => product.name === drop.productName)?.image || bannerImg
 
 const isAdmin = user?.isAdmin || user?.id === ADMIN_STEAM_ID
 
@@ -384,31 +373,12 @@ const loadShopProducts = () =>
       return []
     })
 
-const loadRoulettePrizeProducts = () =>
-  fetch(`${API_BASE_URL}/api/roulette/prizes`)
-    .then((res) => res.json())
-    .then((items) => {
-      if (Array.isArray(items)) {
-        setRoulettePrizeProducts(items)
-      }
-
-      return items
-    })
-    .catch((err) => {
-      console.log("ROULETTE PRIZES LOAD ERROR:", err)
-      setRoulettePrizeProducts([])
-      return []
-    })
-
 const refreshProductCatalog = () =>
-  Promise.all([
-    loadShopProducts(),
-    loadRoulettePrizeProducts()
-  ])
+  loadShopProducts()
 
 const hydrateRoulettePrize = (prize) => {
   const prizeName = prize?.name || prize?.productName
-  const matchedProduct = [...roulettePrizeProducts, ...customProducts, ...products].find((product) => product.name === prizeName)
+  const matchedProduct = [...customProducts, ...products].find((product) => product.name === prizeName)
   const priceValue = Number(prize?.priceValue || prize?.productPrice || matchedProduct?.priceValue || 0)
 
   return {
@@ -530,12 +500,6 @@ useEffect(() => {
 useEffect(() => {
   refreshProductCatalog()
 }, [])
-
-useEffect(() => {
-  if (isRouletteSpinning || isRouletteOpening || rouletteSettled) return
-
-  setRouletteItems(buildRouletteItems(roulettePrizePool))
-}, [roulettePrizeProducts, isRouletteOpening, isRouletteSpinning, rouletteSettled])
 
 useEffect(() => {
   fetch("https://dayz-shop.onrender.com/api/roulette/drops")
@@ -757,6 +721,8 @@ const categories = [
 ]
 
 const allProducts = [...products, ...customProducts]
+const roulettePrizePool = getRoulettePrizePool(allProducts)
+const hasRoulettePrizes = roulettePrizePool.length > 0
 
 const shopCategories = [
   ...categories,
@@ -793,6 +759,12 @@ const filteredProducts = allProducts.filter((product) => {
 
   return matchesCategory && matchesSearch
 })
+
+useEffect(() => {
+  if (isRouletteSpinning || isRouletteOpening || rouletteSettled) return
+
+  setRouletteItems(buildRouletteItems(roulettePrizePool))
+}, [customProducts, isRouletteOpening, isRouletteSpinning, rouletteSettled])
 
 const cartTotal = cart.reduce(
   (sum, item) => sum + item.priceValue * (item.quantity || 1),
