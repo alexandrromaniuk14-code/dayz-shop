@@ -135,6 +135,45 @@ const ROULETTE_ITEM_WIDTH = 168
 const ROULETTE_ITEM_GAP = 16
 const ROULETTE_ITEM_STEP = ROULETTE_ITEM_WIDTH + ROULETTE_ITEM_GAP
 const ROULETTE_LANDING_INDEX = 52
+const API_BASE_URL = "https://dayz-shop.onrender.com"
+const AUTH_TOKEN_STORAGE_KEY = "redmoonAuthToken"
+const STEAM_ID_STORAGE_KEY = "redmoonSteamId"
+const ADMIN_STEAM_ID = "76561198722502186"
+
+const getStoredAuthToken = () => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+
+const getAuthHeaders = () => {
+  const token = getStoredAuthToken()
+
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const authorizedFetch = (url, options = {}) => {
+  const headers = {
+    ...getAuthHeaders(),
+    ...(options.headers || {})
+  }
+
+  return fetch(url, {
+    credentials: "include",
+    ...options,
+    headers
+  })
+}
+
+const normalizeUser = (data) => {
+  const steamId = data?.id || data?.steamId
+
+  if (!steamId) return null
+
+  return {
+    ...data,
+    id: String(steamId),
+    steamId: String(steamId),
+    displayName: data.displayName || data.username || "Steam пользователь",
+    isAdmin: data.isAdmin || String(steamId) === ADMIN_STEAM_ID
+  }
+}
 
 const getRoulettePrizePool = () =>
   products.filter((product) => product.type !== "roulette")
@@ -215,7 +254,7 @@ const spinResultTimerRef = useRef(null)
 const getRouletteDropImage = (drop) =>
   [...products, ...customProducts].find((product) => product.name === drop.productName)?.image || bannerImg
 
-const isAdmin = user?.isAdmin || user?.id === "76561198722502186"
+const isAdmin = user?.isAdmin || user?.id === ADMIN_STEAM_ID
 
 const resetAdminProductForm = () => {
   setEditingProductId(null)
@@ -463,16 +502,77 @@ useEffect(() => {
 }, [])
    const [backendMessage, setBackendMessage] = useState("")
    useEffect(() => {
-  fetch("https://dayz-shop.onrender.com/api/user", {
-  credentials: "include"
-})
+  const params = new URLSearchParams(window.location.search)
+  const authTokenFromUrl = params.get("authToken")
+  const steamIdFromUrl = params.get("steamId")
+
+  if (authTokenFromUrl) {
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, authTokenFromUrl)
+  }
+
+  if (steamIdFromUrl) {
+    localStorage.setItem(STEAM_ID_STORAGE_KEY, steamIdFromUrl)
+  }
+
+  if (authTokenFromUrl || steamIdFromUrl) {
+    params.delete("authToken")
+    params.delete("steamId")
+
+    const nextSearch = params.toString()
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`
+
+    window.history.replaceState({}, "", nextUrl)
+  }
+
+  const loadUserBySteamId = (steamId) => {
+    if (!steamId) {
+      setUser(null)
+      return
+    }
+
+    authorizedFetch(`https://dayz-shop.onrender.com/api/user/${steamId}`)
+      .then((res) => res.json())
+      .then((dbUser) => {
+        const normalizedUser = normalizeUser(dbUser)
+
+        setUser(normalizedUser)
+
+        if (dbUser?.balance !== undefined) {
+          setBalance(dbUser.balance)
+        }
+      })
+      .catch((err) => {
+        console.log("USER FALLBACK LOAD ERROR:", err)
+        setUser(null)
+      })
+
+    fetch(`https://dayz-shop.onrender.com/api/purchases/${steamId}`, {
+      credentials: "include"
+    })
+      .then((res) => res.json())
+      .then((purchases) => {
+        if (Array.isArray(purchases)) {
+          setPurchaseHistory(purchases.map(normalizePurchase))
+        }
+      })
+      .catch((err) => {
+        console.log("PURCHASE HISTORY ERROR:", err)
+      })
+  }
+
+  authorizedFetch("https://dayz-shop.onrender.com/api/user")
     .then((res) => res.json())
     .then((data) => {
   console.log("USER FROM BACKEND:", data)
-  setUser(data && data.id ? data : null)
+  const normalizedUser = normalizeUser(data)
+  const savedSteamId = steamIdFromUrl || localStorage.getItem(STEAM_ID_STORAGE_KEY)
 
-      if (data?.id) {
-  fetch(`https://dayz-shop.onrender.com/api/user/${data.id}`)
+  setUser(normalizedUser)
+
+      if (normalizedUser?.id) {
+  localStorage.setItem(STEAM_ID_STORAGE_KEY, normalizedUser.id)
+
+  authorizedFetch(`https://dayz-shop.onrender.com/api/user/${normalizedUser.id}`)
     .then((res) => res.json())
     .then((dbUser) => {
       if (dbUser?.balance !== undefined) {
@@ -480,7 +580,7 @@ useEffect(() => {
       }
     })
 
-  fetch(`https://dayz-shop.onrender.com/api/purchases/${data.id}`, {
+  fetch(`https://dayz-shop.onrender.com/api/purchases/${normalizedUser.id}`, {
     credentials: "include"
   })
     .then((res) => res.json())
@@ -492,11 +592,13 @@ useEffect(() => {
     .catch((err) => {
       console.log("PURCHASE HISTORY ERROR:", err)
     })
+} else if (savedSteamId) {
+  loadUserBySteamId(savedSteamId)
 }
     })
     .catch((err) => {
       console.log("USER LOAD ERROR:", err)
-      setUser(null)
+      loadUserBySteamId(steamIdFromUrl || localStorage.getItem(STEAM_ID_STORAGE_KEY))
     })
 }, [])
 
@@ -785,14 +887,14 @@ const loadAdminData = () => {
   if (!isAdmin) return
 
   Promise.all([
-    fetch("https://dayz-shop.onrender.com/api/admin/summary", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://dayz-shop.onrender.com/api/admin/products", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://dayz-shop.onrender.com/api/admin/users", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://dayz-shop.onrender.com/api/admin/purchases", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://dayz-shop.onrender.com/api/admin/payments", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://dayz-shop.onrender.com/api/admin/logs", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://dayz-shop.onrender.com/api/admin/promocodes", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://dayz-shop.onrender.com/api/admin/top-products", { credentials: "include" }).then((res) => res.json())
+    authorizedFetch("https://dayz-shop.onrender.com/api/admin/summary").then((res) => res.json()),
+    authorizedFetch("https://dayz-shop.onrender.com/api/admin/products").then((res) => res.json()),
+    authorizedFetch("https://dayz-shop.onrender.com/api/admin/users").then((res) => res.json()),
+    authorizedFetch("https://dayz-shop.onrender.com/api/admin/purchases").then((res) => res.json()),
+    authorizedFetch("https://dayz-shop.onrender.com/api/admin/payments").then((res) => res.json()),
+    authorizedFetch("https://dayz-shop.onrender.com/api/admin/logs").then((res) => res.json()),
+    authorizedFetch("https://dayz-shop.onrender.com/api/admin/promocodes").then((res) => res.json()),
+    authorizedFetch("https://dayz-shop.onrender.com/api/admin/top-products").then((res) => res.json())
   ])
     .then(([summary, productsList, usersList, purchasesList, paymentsList, logsList, promocodesList, topProductsList]) => {
       if (!summary.error) setAdminSummary(summary)
@@ -846,7 +948,7 @@ const handleAdminProductSubmit = (event) => {
     formData.append("image", adminProductForm.image)
   }
 
-  fetch(
+  authorizedFetch(
     editingProductId
       ? `https://dayz-shop.onrender.com/api/admin/products/${editingProductId}`
       : "https://dayz-shop.onrender.com/api/admin/products",
@@ -899,7 +1001,7 @@ const handleAdminBalanceSubmit = (event) => {
     set: "https://dayz-shop.onrender.com/api/admin/balance/set"
   }
 
-  fetch(endpointByMode[adminBalanceForm.mode], {
+  authorizedFetch(endpointByMode[adminBalanceForm.mode], {
     method: "POST",
     credentials: "include",
     headers: {
@@ -974,7 +1076,7 @@ const editAdminProduct = (product) => {
 }
 
 const hideAdminProduct = (productId) => {
-  fetch(`https://dayz-shop.onrender.com/api/admin/products/${productId}`, {
+  authorizedFetch(`https://dayz-shop.onrender.com/api/admin/products/${productId}`, {
     method: "DELETE",
     credentials: "include"
   })
@@ -1008,7 +1110,7 @@ const moveAdminProduct = (productId, direction) => {
   nextProducts.splice(nextIndex, 0, product)
   setAdminProducts(nextProducts)
 
-  fetch("https://dayz-shop.onrender.com/api/admin/products/sort", {
+  authorizedFetch("https://dayz-shop.onrender.com/api/admin/products/sort", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1025,7 +1127,7 @@ const moveAdminProduct = (productId, direction) => {
 }
 
 const updatePurchaseStatus = (purchaseId, status) => {
-  fetch(`https://dayz-shop.onrender.com/api/admin/purchases/${purchaseId}/status`, {
+  authorizedFetch(`https://dayz-shop.onrender.com/api/admin/purchases/${purchaseId}/status`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1050,7 +1152,7 @@ const updatePurchaseStatus = (purchaseId, status) => {
 const handleAdminPromocodeSubmit = (event) => {
   event.preventDefault()
 
-  fetch("https://dayz-shop.onrender.com/api/admin/promocodes", {
+  authorizedFetch("https://dayz-shop.onrender.com/api/admin/promocodes", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1070,7 +1172,7 @@ const handleAdminPromocodeSubmit = (event) => {
 }
 
 const toggleAdminPromocode = (promo) => {
-  fetch(`https://dayz-shop.onrender.com/api/admin/promocodes/${promo.id}`, {
+  authorizedFetch(`https://dayz-shop.onrender.com/api/admin/promocodes/${promo.id}`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -2148,6 +2250,8 @@ paddingTop: "120px"
         <button
           className="profile-logout"
           onClick={() => {
+            localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+            localStorage.removeItem(STEAM_ID_STORAGE_KEY)
             window.location.href = "https://dayz-shop.onrender.com/auth/logout"
           }}
         >

@@ -6,6 +6,7 @@ const SteamStrategy = require("passport-steam").Strategy
 const multer = require("multer")
 const path = require("path")
 const fs = require("fs")
+const crypto = require("crypto")
 const db = require("./database")
 
 const app = express()
@@ -13,6 +14,7 @@ const app = express()
 app.set("trust proxy", 1)
 const FRONTEND_URL = "https://redmoon-dayz.ru"
 const ADMIN_STEAM_IDS = new Set(["76561198722502186"])
+const AUTH_TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET || process.env.SESSION_SECRET || "redmoon_auth_secret"
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || ""
 const uploadsDir = path.join(__dirname, "uploads")
 const rouletteDropClients = new Set()
@@ -69,7 +71,83 @@ const upload = multer({
 
 const getImageUrl = (file) => file ? `https://redmoon-dayz.ru/uploads/${file.filename}` : null
 
-const isAdminRequest = (req) => ADMIN_STEAM_IDS.has(req.user?.id)
+const encodeTokenPart = (value) =>
+  Buffer.from(JSON.stringify(value))
+    .toString("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+
+const decodeTokenPart = (value) => {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/")
+  const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=")
+
+  return JSON.parse(Buffer.from(padded, "base64").toString("utf8"))
+}
+
+const signTokenPart = (payload) =>
+  crypto
+    .createHmac("sha256", AUTH_TOKEN_SECRET)
+    .update(payload)
+    .digest("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+
+const createAuthToken = (user) => {
+  const payload = encodeTokenPart({
+    id: user.id,
+    steamId: user.id,
+    displayName: user.displayName,
+    photos: user.photos,
+    exp: Date.now() + 1000 * 60 * 60 * 24 * 30
+  })
+
+  return `${payload}.${signTokenPart(payload)}`
+}
+
+const verifyAuthToken = (token) => {
+  if (!token || !token.includes(".")) return null
+
+  const [payload, signature] = token.split(".")
+  const expectedSignature = signTokenPart(payload)
+
+  if (signature.length !== expectedSignature.length) {
+    return null
+  }
+
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+    return null
+  }
+
+  const user = decodeTokenPart(payload)
+
+  if (!user.exp || user.exp < Date.now()) return null
+
+  return user
+}
+
+const getAuthTokenFromRequest = (req) => {
+  const header = req.get("authorization") || ""
+
+  if (header.startsWith("Bearer ")) {
+    return header.slice(7)
+  }
+
+  return req.query.authToken || req.body?.authToken || null
+}
+
+const getRequestUser = (req) => req.user || verifyAuthToken(getAuthTokenFromRequest(req))
+
+const getRequestSteamId = (req) => {
+  const user = getRequestUser(req)
+
+  return String(user?.id || user?.steamId || "")
+}
+
+const isAdminSteamId = (steamId) => ADMIN_STEAM_IDS.has(String(steamId || ""))
+
+const isAdminRequest = (req) => isAdminSteamId(getRequestSteamId(req))
 
 const requireAdmin = (req, res, next) => {
   if (!isAdminRequest(req)) {
@@ -80,13 +158,15 @@ const requireAdmin = (req, res, next) => {
 }
 
 const writeAdminLog = (req, action, target, details = "") => {
+  const adminUser = getRequestUser(req)
+
   db.run(
     `
     INSERT INTO admin_logs (adminSteamId, action, target, details, createdAt)
     VALUES (?, ?, ?, ?, ?)
     `,
     [
-      req.user?.id || "unknown",
+      adminUser?.id || adminUser?.steamId || "unknown",
       action,
       target,
       typeof details === "string" ? details : JSON.stringify(details),
@@ -489,15 +569,23 @@ app.get(
   (req, res) => {
     const redirectUrl = new URL(FRONTEND_URL)
     redirectUrl.searchParams.set("steamId", req.user.id)
+    redirectUrl.searchParams.set("authToken", createAuthToken(req.user))
     res.redirect(redirectUrl.toString())
   }
 )
 
 app.get("/api/user", (req, res) => {
-  if (req.user) {
+  const authUser = getRequestUser(req)
+
+  if (authUser) {
+    const steamId = authUser.id || authUser.steamId
+
     res.json({
-      ...req.user,
-      isAdmin: isAdminRequest(req)
+      ...authUser,
+      id: steamId,
+      steamId,
+      displayName: authUser.displayName || authUser.username || "Steam пользователь",
+      isAdmin: isAdminSteamId(steamId)
     })
   } else {
     res.json(null)
@@ -506,7 +594,11 @@ app.get("/api/user", (req, res) => {
 
 app.get("/api/user/:steamId", (req, res) => {
   const steamId = req.params.steamId
-  const username = req.user?.displayName || "Unknown"
+  const authUser = getRequestUser(req)
+  const username =
+    String(authUser?.id || authUser?.steamId || "") === String(steamId)
+      ? authUser.displayName || "Unknown"
+      : "Unknown"
 
   console.log("USER ROUTE HIT:", steamId)
 
@@ -532,7 +624,12 @@ app.get("/api/user/:steamId", (req, res) => {
             return res.status(500).json({ error: err.message })
           }
 
-          res.json(row)
+          res.json({
+            ...row,
+            id: row.steamId,
+            displayName: row.username,
+            isAdmin: isAdminSteamId(row.steamId)
+          })
         }
       )
     }
