@@ -455,9 +455,9 @@ passport.deserializeUser((user, done) => {
 })
 
 passport.use(new SteamStrategy({
-  returnURL: "https://redmoon-dayz.ru/auth/steam/return",
-  realm: "https://redmoon-dayz.ru/",
-  apiKey: "A5377BED9D499754DCC28D5A1CD4C36E"
+  returnURL: "https://dayz-shop.onrender.com/auth/steam/return",
+  realm: "https://dayz-shop.onrender.com/",
+  apiKey: process.env.STEAM_API_KEY
 }, (identifier, profile, done) => {
   db.run(
     `
@@ -487,7 +487,9 @@ app.get(
     failureRedirect: FRONTEND_URL
   }),
   (req, res) => {
-    res.redirect(FRONTEND_URL)
+    const redirectUrl = new URL(FRONTEND_URL)
+    redirectUrl.searchParams.set("steamId", req.user.id)
+    res.redirect(redirectUrl.toString())
   }
 )
 
