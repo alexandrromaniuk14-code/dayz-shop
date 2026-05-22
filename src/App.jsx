@@ -463,16 +463,16 @@ useEffect(() => {
 }, [])
    const [backendMessage, setBackendMessage] = useState("")
    useEffect(() => {
-  fetch("https://redmoon-dayz.ru/api/user", {
-    credentials: "include"
-  })
+  fetch("https://dayz-shop.onrender.com/api/user", {
+  credentials: "include"
+})
     .then((res) => res.json())
     .then((data) => {
   console.log("USER FROM BACKEND:", data)
   setUser(data && data.id ? data : null)
 
       if (data?.id) {
-  fetch(`https://redmoon-dayz.ru/api/user/${data.id}`)
+  fetch(`https://dayz-shop.onrender.com/api/user/${data.id}`)
     .then((res) => res.json())
     .then((dbUser) => {
       if (dbUser?.balance !== undefined) {
