@@ -278,7 +278,7 @@ const addPurchasesToHistory = (purchases) => {
 }
 
 const saveRouletteDrop = (prize) => {
-  fetch("https://redmoon-dayz.ru/api/roulette/drops", {
+  fetch("https://dayz-shop.onrender.com/api/roulette/drops", {
     method: "POST",
     credentials: "include",
     headers: {
@@ -348,7 +348,7 @@ useEffect(() => {
 }, [])
 
 useEffect(() => {
-  fetch("https://redmoon-dayz.ru/api/products")
+  fetch("https://dayz-shop.onrender.com/api/products")
     .then((res) => res.json())
     .then((items) => {
       if (Array.isArray(items)) {
@@ -361,7 +361,7 @@ useEffect(() => {
 }, [])
 
 useEffect(() => {
-  fetch("https://redmoon-dayz.ru/api/roulette/drops")
+  fetch("https://dayz-shop.onrender.com/api/roulette/drops")
     .then((res) => res.json())
     .then((drops) => {
       if (Array.isArray(drops)) {
@@ -372,7 +372,7 @@ useEffect(() => {
       console.log("ROULETTE DROPS LOAD ERROR:", err)
     })
 
-  const dropsStream = new EventSource("https://redmoon-dayz.ru/api/roulette/drops/stream", {
+  const dropsStream = new EventSource("https://dayz-shop.onrender.com/api/roulette/drops/stream", {
     withCredentials: true
   })
 
@@ -480,7 +480,7 @@ useEffect(() => {
       }
     })
 
-  fetch(`https://redmoon-dayz.ru/api/purchases/${data.id}`, {
+  fetch(`https://dayz-shop.onrender.com/api/purchases/${data.id}`, {
     credentials: "include"
   })
     .then((res) => res.json())
@@ -596,7 +596,7 @@ const handleDepositPayment = () => {
     return
   }
 
-  fetch("https://redmoon-dayz.ru/api/deposit", {
+  fetch("https://dayz-shop.onrender.com/api/deposit", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -631,7 +631,7 @@ const handlePromoRedeem = () => {
     return
   }
 
-  fetch("https://redmoon-dayz.ru/api/promocodes/redeem", {
+  fetch("https://dayz-shop.onrender.com/api/promocodes/redeem", {
     method: "POST",
     credentials: "include",
     headers: {
@@ -674,7 +674,7 @@ const handleProductPurchase = (product) => {
 
   setIsPurchasing(true)
 
-  fetch("https://redmoon-dayz.ru/api/purchase", {
+  fetch("https://dayz-shop.onrender.com/api/purchase", {
     method: "POST",
     credentials: "include",
     headers: {
@@ -734,7 +734,7 @@ const handleCartCheckout = () => {
 
   setIsPurchasing(true)
 
-  fetch("https://redmoon-dayz.ru/api/purchase/cart", {
+  fetch("https://dayz-shop.onrender.com/api/purchase/cart", {
     method: "POST",
     credentials: "include",
     headers: {
@@ -785,14 +785,14 @@ const loadAdminData = () => {
   if (!isAdmin) return
 
   Promise.all([
-    fetch("https://redmoon-dayz.ru/api/admin/summary", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://redmoon-dayz.ru/api/admin/products", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://redmoon-dayz.ru/api/admin/users", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://redmoon-dayz.ru/api/admin/purchases", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://redmoon-dayz.ru/api/admin/payments", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://redmoon-dayz.ru/api/admin/logs", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://redmoon-dayz.ru/api/admin/promocodes", { credentials: "include" }).then((res) => res.json()),
-    fetch("https://redmoon-dayz.ru/api/admin/top-products", { credentials: "include" }).then((res) => res.json())
+    fetch("https://dayz-shop.onrender.com/api/admin/summary", { credentials: "include" }).then((res) => res.json()),
+    fetch("https://dayz-shop.onrender.com/api/admin/products", { credentials: "include" }).then((res) => res.json()),
+    fetch("https://dayz-shop.onrender.com/api/admin/users", { credentials: "include" }).then((res) => res.json()),
+    fetch("https://dayz-shop.onrender.com/api/admin/purchases", { credentials: "include" }).then((res) => res.json()),
+    fetch("https://dayz-shop.onrender.com/api/admin/payments", { credentials: "include" }).then((res) => res.json()),
+    fetch("https://dayz-shop.onrender.com/api/admin/logs", { credentials: "include" }).then((res) => res.json()),
+    fetch("https://dayz-shop.onrender.com/api/admin/promocodes", { credentials: "include" }).then((res) => res.json()),
+    fetch("https://dayz-shop.onrender.com/api/admin/top-products", { credentials: "include" }).then((res) => res.json())
   ])
     .then(([summary, productsList, usersList, purchasesList, paymentsList, logsList, promocodesList, topProductsList]) => {
       if (!summary.error) setAdminSummary(summary)
@@ -848,8 +848,8 @@ const handleAdminProductSubmit = (event) => {
 
   fetch(
     editingProductId
-      ? `https://redmoon-dayz.ru/api/admin/products/${editingProductId}`
-      : "https://redmoon-dayz.ru/api/admin/products",
+      ? `https://dayz-shop.onrender.com/api/admin/products/${editingProductId}`
+      : "https://dayz-shop.onrender.com/api/admin/products",
     {
       method: editingProductId ? "PUT" : "POST",
       credentials: "include",
@@ -871,7 +871,7 @@ const handleAdminProductSubmit = (event) => {
       resetAdminProductForm()
       loadAdminData()
 
-      fetch("https://redmoon-dayz.ru/api/products")
+      fetch("https://dayz-shop.onrender.com/api/products")
         .then((res) => res.json())
         .then((items) => {
           if (Array.isArray(items)) setCustomProducts(items)
@@ -894,9 +894,9 @@ const handleAdminBalanceSubmit = (event) => {
   }
 
   const endpointByMode = {
-    add: "https://redmoon-dayz.ru/api/admin/balance/add",
-    subtract: "https://redmoon-dayz.ru/api/admin/balance/subtract",
-    set: "https://redmoon-dayz.ru/api/admin/balance/set"
+    add: "https://dayz-shop.onrender.com/api/admin/balance/add",
+    subtract: "https://dayz-shop.onrender.com/api/admin/balance/subtract",
+    set: "https://dayz-shop.onrender.com/api/admin/balance/set"
   }
 
   fetch(endpointByMode[adminBalanceForm.mode], {
@@ -974,7 +974,7 @@ const editAdminProduct = (product) => {
 }
 
 const hideAdminProduct = (productId) => {
-  fetch(`https://redmoon-dayz.ru/api/admin/products/${productId}`, {
+  fetch(`https://dayz-shop.onrender.com/api/admin/products/${productId}`, {
     method: "DELETE",
     credentials: "include"
   })
@@ -1008,7 +1008,7 @@ const moveAdminProduct = (productId, direction) => {
   nextProducts.splice(nextIndex, 0, product)
   setAdminProducts(nextProducts)
 
-  fetch("https://redmoon-dayz.ru/api/admin/products/sort", {
+  fetch("https://dayz-shop.onrender.com/api/admin/products/sort", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1016,7 +1016,7 @@ const moveAdminProduct = (productId, direction) => {
       items: nextProducts.map((item) => ({ id: item.id }))
     })
   }).then(() => {
-    fetch("https://redmoon-dayz.ru/api/products")
+    fetch("https://dayz-shop.onrender.com/api/products")
       .then((res) => res.json())
       .then((items) => {
         if (Array.isArray(items)) setCustomProducts(items)
@@ -1025,7 +1025,7 @@ const moveAdminProduct = (productId, direction) => {
 }
 
 const updatePurchaseStatus = (purchaseId, status) => {
-  fetch(`https://redmoon-dayz.ru/api/admin/purchases/${purchaseId}/status`, {
+  fetch(`https://dayz-shop.onrender.com/api/admin/purchases/${purchaseId}/status`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1050,7 +1050,7 @@ const updatePurchaseStatus = (purchaseId, status) => {
 const handleAdminPromocodeSubmit = (event) => {
   event.preventDefault()
 
-  fetch("https://redmoon-dayz.ru/api/admin/promocodes", {
+  fetch("https://dayz-shop.onrender.com/api/admin/promocodes", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -1070,7 +1070,7 @@ const handleAdminPromocodeSubmit = (event) => {
 }
 
 const toggleAdminPromocode = (promo) => {
-  fetch(`https://redmoon-dayz.ru/api/admin/promocodes/${promo.id}`, {
+  fetch(`https://dayz-shop.onrender.com/api/admin/promocodes/${promo.id}`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
