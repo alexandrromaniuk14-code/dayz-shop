@@ -135,6 +135,7 @@ const ROULETTE_ITEM_WIDTH = 168
 const ROULETTE_ITEM_GAP = 16
 const ROULETTE_ITEM_STEP = ROULETTE_ITEM_WIDTH + ROULETTE_ITEM_GAP
 const ROULETTE_LANDING_INDEX = 52
+const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 120
 const API_BASE_URL = "https://dayz-shop.onrender.com"
 const AUTH_TOKEN_STORAGE_KEY = "redmoonAuthToken"
@@ -188,11 +189,28 @@ const normalizePayment = (payment) => ({
     : "Дата не указана"
 })
 
-const getRoulettePrizePool = () =>
-  products.filter((product) => product.type !== "roulette")
+const isRoulettePrizeProduct = (product) => {
+  const text = [
+    product?.name,
+    product?.description,
+    Array.isArray(product?.category) ? product.category.join(" ") : product?.category
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+  const priceValue = Number(product?.priceValue || product?.oldPriceValue || 0)
 
-const buildRouletteItems = () => {
-  const prizePool = getRoulettePrizePool()
+  if (!product?.name || priceValue <= 0) return false
+  if (product.type === "roulette" || product.name === ROULETTE_PRODUCT_NAME) return false
+
+  return !["vip", "вип", "пропуск", "слот"].some((marker) => text.includes(marker))
+}
+
+const getRoulettePrizePool = (items) =>
+  items.filter(isRoulettePrizeProduct)
+
+const buildRouletteItems = (prizePool) => {
+  if (!prizePool.length) return []
 
   return Array.from({ length: 70 }, () => prizePool[Math.floor(Math.random() * prizePool.length)])
 }
@@ -218,7 +236,7 @@ const [transferAmount, setTransferAmount] = useState("")
 const [purchaseHistory, setPurchaseHistory] = useState([])
 const [paymentHistory, setPaymentHistory] = useState([])
 const [isTransferSubmitting, setIsTransferSubmitting] = useState(false)
-const [rouletteItems, setRouletteItems] = useState(() => buildRouletteItems())
+const [rouletteItems, setRouletteItems] = useState([])
 const [rouletteOffset, setRouletteOffset] = useState(0)
 const [isRouletteSpinning, setIsRouletteSpinning] = useState(false)
 const [isRouletteOpening, setIsRouletteOpening] = useState(false)
@@ -227,6 +245,7 @@ const [rouletteDrops, setRouletteDrops] = useState([])
 const [rouletteSettled, setRouletteSettled] = useState(false)
 const [isPurchasing, setIsPurchasing] = useState(false)
 const [customProducts, setCustomProducts] = useState([])
+const [roulettePrizeProducts, setRoulettePrizeProducts] = useState([])
 const [adminProducts, setAdminProducts] = useState([])
 const [adminUsers, setAdminUsers] = useState([])
 const [adminPurchases, setAdminPurchases] = useState([])
@@ -266,9 +285,11 @@ const [isAdminImageDragging, setIsAdminImageDragging] = useState(false)
 const rouletteViewportRef = useRef(null)
 const spinStartTimerRef = useRef(null)
 const spinResultTimerRef = useRef(null)
+const roulettePrizePool = getRoulettePrizePool(roulettePrizeProducts)
+const hasRoulettePrizes = roulettePrizePool.length > 0
 
 const getRouletteDropImage = (drop) =>
-  [...products, ...customProducts].find((product) => product.name === drop.productName)?.image || bannerImg
+  [...roulettePrizeProducts, ...products, ...customProducts].find((product) => product.name === drop.productName)?.image || bannerImg
 
 const isAdmin = user?.isAdmin || user?.id === ADMIN_STEAM_ID
 
@@ -348,9 +369,46 @@ const addPaymentsToHistory = (payments) => {
   })
 }
 
+const loadShopProducts = () =>
+  fetch(`${API_BASE_URL}/api/products`)
+    .then((res) => res.json())
+    .then((items) => {
+      if (Array.isArray(items)) {
+        setCustomProducts(items)
+      }
+
+      return items
+    })
+    .catch((err) => {
+      console.log("PRODUCTS LOAD ERROR:", err)
+      return []
+    })
+
+const loadRoulettePrizeProducts = () =>
+  fetch(`${API_BASE_URL}/api/roulette/prizes`)
+    .then((res) => res.json())
+    .then((items) => {
+      if (Array.isArray(items)) {
+        setRoulettePrizeProducts(items)
+      }
+
+      return items
+    })
+    .catch((err) => {
+      console.log("ROULETTE PRIZES LOAD ERROR:", err)
+      setRoulettePrizeProducts([])
+      return []
+    })
+
+const refreshProductCatalog = () =>
+  Promise.all([
+    loadShopProducts(),
+    loadRoulettePrizeProducts()
+  ])
+
 const hydrateRoulettePrize = (prize) => {
   const prizeName = prize?.name || prize?.productName
-  const matchedProduct = [...products, ...customProducts].find((product) => product.name === prizeName)
+  const matchedProduct = [...roulettePrizeProducts, ...customProducts, ...products].find((product) => product.name === prizeName)
   const priceValue = Number(prize?.priceValue || prize?.productPrice || matchedProduct?.priceValue || 0)
 
   return {
@@ -367,6 +425,11 @@ const spinRoulette = () => {
 
   if (!user?.id) {
     showProfileNotice("Войдите через Steam перед рулеткой", "error")
+    return
+  }
+
+  if (!hasRoulettePrizes) {
+    showProfileNotice("В рулетке пока нет доступных призов", "error")
     return
   }
 
@@ -409,7 +472,7 @@ const spinRoulette = () => {
       }
 
       const prize = hydrateRoulettePrize(data.prize)
-      const nextItems = buildRouletteItems()
+      const nextItems = buildRouletteItems(roulettePrizePool)
       nextItems[ROULETTE_LANDING_INDEX] = prize
 
       const targetOffset =
@@ -465,17 +528,14 @@ useEffect(() => {
 }, [])
 
 useEffect(() => {
-  fetch("https://dayz-shop.onrender.com/api/products")
-    .then((res) => res.json())
-    .then((items) => {
-      if (Array.isArray(items)) {
-        setCustomProducts(items)
-      }
-    })
-    .catch((err) => {
-      console.log("PRODUCTS LOAD ERROR:", err)
-    })
+  refreshProductCatalog()
 }, [])
+
+useEffect(() => {
+  if (isRouletteSpinning || isRouletteOpening || rouletteSettled) return
+
+  setRouletteItems(buildRouletteItems(roulettePrizePool))
+}, [roulettePrizeProducts, isRouletteOpening, isRouletteSpinning, rouletteSettled])
 
 useEffect(() => {
   fetch("https://dayz-shop.onrender.com/api/roulette/drops")
@@ -1127,12 +1187,7 @@ const handleAdminProductSubmit = (event) => {
 
       resetAdminProductForm()
       loadAdminData()
-
-      fetch("https://dayz-shop.onrender.com/api/products")
-        .then((res) => res.json())
-        .then((items) => {
-          if (Array.isArray(items)) setCustomProducts(items)
-        })
+      refreshProductCatalog()
 
       showProfileNotice(editingProductId ? "Товар обновлен" : "Товар добавлен")
     })
@@ -1246,6 +1301,9 @@ const hideAdminProduct = (productId) => {
       setCustomProducts((currentProducts) =>
         currentProducts.filter((product) => product.id !== productId)
       )
+      setRoulettePrizeProducts((currentProducts) =>
+        currentProducts.filter((product) => product.id !== productId)
+      )
       showProfileNotice("Товар скрыт из магазина")
     })
     .catch((err) => {
@@ -1272,13 +1330,7 @@ const moveAdminProduct = (productId, direction) => {
     body: JSON.stringify({
       items: nextProducts.map((item) => ({ id: item.id }))
     })
-  }).then(() => {
-    fetch("https://dayz-shop.onrender.com/api/products")
-      .then((res) => res.json())
-      .then((items) => {
-        if (Array.isArray(items)) setCustomProducts(items)
-      })
-  })
+  }).then(refreshProductCatalog)
 }
 
 const updatePurchaseStatus = (purchaseId, status) => {
@@ -2663,6 +2715,11 @@ margin: "0 auto",
         <div className="roulette-pointer roulette-pointer-top" />
         <div className="roulette-pointer roulette-pointer-bottom" />
         <div className="roulette-center-lines" />
+        {rouletteItems.length === 0 && (
+          <div className="roulette-empty">
+            В рулетке пока нет активных призов
+          </div>
+        )}
         <div
           className="roulette-track"
           style={{
@@ -2698,13 +2755,15 @@ margin: "0 auto",
           <button
             className="roulette-spin-button"
             onClick={spinRoulette}
-            disabled={isRouletteSpinning || isRouletteOpening}
+            disabled={isRouletteSpinning || isRouletteOpening || !hasRoulettePrizes}
           >
             {isRouletteOpening
               ? "ОТКРЫВАЕМ..."
               : isRouletteSpinning
                 ? "КРУТИТСЯ..."
-                : !user?.id
+                : !hasRoulettePrizes
+                  ? "НЕТ ПРИЗОВ"
+                  : !user?.id
                   ? "ВОЙТИ ЧЕРЕЗ STEAM"
                   : hasRouletteFunds
                     ? `КРУТИТЬ ЗА ${ROULETTE_PRICE} ₽`

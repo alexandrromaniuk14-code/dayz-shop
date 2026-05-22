@@ -201,6 +201,23 @@ const getDiscountedPrice = (price, discountPercent) => {
   return Math.max(Math.round(safePrice * (100 - safeDiscount) / 100), 0)
 }
 
+const isRoulettePrizeProduct = (product) => {
+  const price = getDiscountedPrice(product?.price, product?.discountPercent)
+  const text = [
+    product?.name,
+    product?.description,
+    product?.category
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+
+  if (!product?.name || price <= 0) return false
+  if (product.name === ROULETTE_PRODUCT_NAME) return false
+
+  return !["vip", "вип", "пропуск", "слот"].some((marker) => text.includes(marker))
+}
+
 const formatPurchase = (purchase) => ({
   id: purchase.id,
   name: purchase.product,
@@ -309,52 +326,45 @@ const normalizeCartItems = (items, callback) => {
   )
 }
 
-const getRoulettePrize = (callback) => {
-  const prizeMap = new Map()
-
-  Object.entries(productCatalog).forEach(([name, price]) => {
-    if (name !== ROULETTE_PRODUCT_NAME && Number(price) > 0) {
-      prizeMap.set(name, {
-        name,
-        price: Number(price)
-      })
-    }
-  })
-
+const getRoulettePrizeProducts = (callback) => {
   db.all(
     `
-    SELECT name, price, discountPercent
+    SELECT *
     FROM products
-    WHERE isActive = 1 AND name != ?
+    WHERE isActive = 1
+    ORDER BY sortOrder ASC, id DESC
     `,
-    [ROULETTE_PRODUCT_NAME],
+    [],
     (err, products) => {
       if (err) {
         callback(err)
         return
       }
 
-      products.forEach((product) => {
-        const price = getDiscountedPrice(product.price, product.discountPercent)
-
-        if (product.name && price > 0) {
-          prizeMap.set(product.name, {
-            name: product.name,
-            price
-          })
-        }
-      })
-
-      const prizes = Array.from(prizeMap.values())
-
-      if (prizes.length === 0) {
-        callback(new Error("Нет доступных призов для рулетки"))
-        return
-      }
-
-      callback(null, prizes[Math.floor(Math.random() * prizes.length)])
+      callback(null, products.filter(isRoulettePrizeProduct))
     }
   )
+}
+
+const getRoulettePrize = (callback) => {
+  getRoulettePrizeProducts((err, products) => {
+    if (err) {
+      callback(err)
+      return
+    }
+
+    const prizes = products.map((product) => ({
+      name: product.name,
+      price: getDiscountedPrice(product.price, product.discountPercent)
+    }))
+
+    if (prizes.length === 0) {
+      callback(new Error("Нет доступных призов для рулетки"))
+      return
+    }
+
+    callback(null, prizes[Math.floor(Math.random() * prizes.length)])
+  })
 }
 
 const ensureUser = (steamId, username, callback) => {
@@ -832,6 +842,16 @@ app.get("/api/products", (req, res) => {
       res.json(products.map(formatProduct))
     }
   )
+})
+
+app.get("/api/roulette/prizes", (req, res) => {
+  getRoulettePrizeProducts((err, products) => {
+    if (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    res.json(products.map(formatProduct))
+  })
 })
 
 app.get("/api/admin/summary", requireAdmin, (req, res) => {
