@@ -142,8 +142,22 @@ const API_BASE_URL = "https://dayz-shop.onrender.com"
 const AUTH_TOKEN_STORAGE_KEY = "redmoonAuthToken"
 const STEAM_ID_STORAGE_KEY = "redmoonSteamId"
 const ADMIN_STEAM_ID = "76561198722502186"
+const MIN_DEPOSIT_AMOUNT = 10
+const DEPOSIT_BONUS_TIERS = [
+  { min: 3000, percent: 30 },
+  { min: 2000, percent: 20 },
+  { min: 1000, percent: 15 },
+  { min: 500, percent: 10 },
+]
 
 const getStoredAuthToken = () => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+
+const getDepositBonus = (amount) => {
+  const safeAmount = Math.floor(Number(amount || 0))
+  const tier = DEPOSIT_BONUS_TIERS.find((item) => safeAmount >= item.min)
+
+  return tier ? Math.floor(safeAmount * tier.percent / 100) : 0
+}
 
 const getAuthHeaders = () => {
   const token = getStoredAuthToken()
@@ -222,7 +236,8 @@ function App() {
   const [paymentSuccess, setPaymentSuccess] = useState(false)
   const [page, setPage] = useState("shop")
   const [depositAmount, setDepositAmount] = useState("")
-const [depositBonus, setDepositBonus] = useState(0)
+const [depositEmail, setDepositEmail] = useState("")
+const [isDepositSubmitting, setIsDepositSubmitting] = useState(false)
 const [cart, setCart] = useState([])
 const [cartOpen, setCartOpen] = useState(false)
 const [message, setMessage] = useState(null)
@@ -425,7 +440,6 @@ const spinRoulette = () => {
   if (balance < ROULETTE_PRICE) {
     showProfileNotice("Недостаточно средств для рулетки", "error")
     setDepositAmount(ROULETTE_PRICE)
-    setDepositBonus(0)
     setPage("deposit")
     window.scrollTo({ top: 0, behavior: "smooth" })
     return
@@ -452,7 +466,6 @@ const spinRoulette = () => {
         if ((data.error || "").includes("Недостаточно")) {
           setBalance(data.balance ?? balance)
           setDepositAmount(ROULETTE_PRICE)
-          setDepositBonus(0)
           setPage("deposit")
           window.scrollTo({ top: 0, behavior: "smooth" })
         }
@@ -599,6 +612,23 @@ useEffect(() => {
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`
 
     window.history.replaceState({}, "", nextUrl)
+
+    const storedSteamId = localStorage.getItem(STEAM_ID_STORAGE_KEY)
+
+    if (storedSteamId) {
+      setTimeout(() => {
+        authorizedFetch(`${API_BASE_URL}/api/user/${storedSteamId}`)
+          .then((res) => res.json())
+          .then((dbUser) => {
+            if (dbUser?.balance !== undefined) {
+              setBalance(dbUser.balance)
+            }
+          })
+          .catch((err) => console.log("PAYMENT USER REFRESH ERROR:", err))
+
+        loadPaymentHistory(storedSteamId)
+      }, 1200)
+    }
 
     setTimeout(() => {
       setMessage(null)
@@ -793,13 +823,14 @@ const cartTotal = cart.reduce(
 const hasRouletteFunds = balance >= ROULETTE_PRICE
 
 const depositOptions = [
-  { amount: 100, bonus: 0 },
-  { amount: 300, bonus: 50 },
-  { amount: 500, bonus: 100 },
-  { amount: 1000, bonus: 250 },
+  { amount: 100 },
+  { amount: 500 },
+  { amount: 1000 },
+  { amount: 2000 },
 ]
 
-const depositValue = Number(depositAmount || 0)
+const depositValue = Math.floor(Number(depositAmount || 0))
+const depositBonus = getDepositBonus(depositValue)
 const depositTotal = depositValue + depositBonus
 
 const profileMenu = [
@@ -825,28 +856,47 @@ const showProfileNotice = (text, type = "success") => {
 }
 
 const handleDepositPayment = () => {
+  if (isDepositSubmitting) return
+
   if (!user?.id) {
     showProfileNotice("Войдите через Steam перед оплатой", "error")
     return
   }
 
-  if (!depositValue || depositValue <= 0) {
-    showProfileNotice("Выберите или введите сумму пополнения", "error")
+  if (!depositValue || depositValue < MIN_DEPOSIT_AMOUNT) {
+    showProfileNotice(`Минимальная сумма пополнения ${MIN_DEPOSIT_AMOUNT} ₽`, "error")
     return
   }
 
-  fetch("https://dayz-shop.onrender.com/api/deposit", {
+  if (!depositEmail.trim()) {
+    showProfileNotice("Укажите email для оплаты", "error")
+    return
+  }
+
+  setIsDepositSubmitting(true)
+
+  authorizedFetch(`${API_BASE_URL}/api/deposit`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      steamId: user.id,
-      amount: depositValue
+      amount: depositValue,
+      email: depositEmail.trim()
     })
   })
-    .then((res) => res.json())
-    .then((data) => {
+    .then((res) =>
+      res.json().then((data) => ({
+        ok: res.ok,
+        data
+      }))
+    )
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showProfileNotice(data.error || "Не удалось создать платеж", "error")
+        return
+      }
+
       if (data.paymentUrl) {
         window.location.href = data.paymentUrl
       } else {
@@ -856,6 +906,9 @@ const handleDepositPayment = () => {
     .catch((err) => {
       console.log("DEPOSIT ERROR:", err)
       showProfileNotice("Ошибка при создании платежа", "error")
+    })
+    .finally(() => {
+      setIsDepositSubmitting(false)
     })
 }
 
@@ -1006,7 +1059,6 @@ const handleProductPurchase = (product) => {
 
         if ((data.error || "").includes("Недостаточно средств")) {
           setDepositAmount(product.priceValue)
-          setDepositBonus(0)
           setSelectedProduct(null)
           setPage("deposit")
         }
@@ -1069,7 +1121,6 @@ const handleCartCheckout = () => {
 
         if ((data.error || "").includes("Недостаточно средств")) {
           setDepositAmount(cartTotal)
-          setDepositBonus(0)
         }
 
         return
@@ -2679,6 +2730,18 @@ margin: "0 auto",
   ))}
 
 </div>
+<a
+  className="freekassa-verify-banner"
+  href="https://freekassa.net"
+  target="_blank"
+  rel="noopener noreferrer"
+>
+  <img
+    src="https://cdn.freekassa.net/banners/big-white-1.png"
+    title="Прием платежей на сайте"
+    alt="Прием платежей на сайте"
+  />
+</a>
       </main>
       )}
       {page === "roulette" && (
@@ -2819,7 +2882,23 @@ margin: "0 auto",
         <div className="deposit-heading">
           <span>REDMOON BALANCE</span>
           <h2>Пополнение баланса</h2>
-          <p>Выберите готовую сумму или введите свою. Средства зачисляются на Steam аккаунт после оплаты.</p>
+          <p>Выберите сумму, укажите email и перейдите к оплате FreeKassa. Баланс начислится автоматически после подтверждения платежа.</p>
+        </div>
+
+        <div className="deposit-methods">
+          <span>Метод оплаты</span>
+          <div className="deposit-method-grid">
+            <button className="deposit-method-card active" type="button">
+              <img
+                src="https://cdn.freekassa.net/banners/big-white-1.png"
+                alt="FreeKassa"
+              />
+            </button>
+            <button className="deposit-method-card disabled" type="button" disabled>
+              <strong>PAYPALYCH</strong>
+              <small>Скоро</small>
+            </button>
+          </div>
         </div>
 
         <div className="deposit-options">
@@ -2829,35 +2908,64 @@ margin: "0 auto",
               className={Number(depositAmount) === item.amount ? "deposit-option active" : "deposit-option"}
               onClick={() => {
                 setDepositAmount(item.amount)
-                setDepositBonus(item.bonus)
               }}
             >
               <strong>{item.amount} ₽</strong>
-              <span>{item.bonus > 0 ? `+${item.bonus} бонус` : "Без бонуса"}</span>
+              <span>{getDepositBonus(item.amount) > 0 ? `+${getDepositBonus(item.amount)} ₽ бонус` : "Без бонуса"}</span>
             </button>
           ))}
         </div>
 
-        <label className="deposit-custom-field">
-          <span>Своя сумма</span>
-          <input
-            type="number"
-            min="1"
-            placeholder="Например, 750"
-            value={depositAmount}
-            onChange={(e) => {
-              setDepositAmount(e.target.value)
-              setDepositBonus(0)
-            }}
-          />
-        </label>
+        <div className="deposit-fields-grid">
+          <label className="deposit-custom-field">
+            <span>Сумма (мин. {MIN_DEPOSIT_AMOUNT} ₽)</span>
+            <input
+              type="number"
+              min={MIN_DEPOSIT_AMOUNT}
+              placeholder="Например, 750"
+              value={depositAmount}
+              onChange={(e) => {
+                setDepositAmount(e.target.value)
+              }}
+            />
+          </label>
+
+          <label className="deposit-custom-field">
+            <span>Сумма к зачислению</span>
+            <input
+              type="number"
+              value={depositTotal || ""}
+              readOnly
+            />
+          </label>
+
+          <label className="deposit-custom-field">
+            <span>Email</span>
+            <input
+              type="email"
+              placeholder="name@example.com"
+              value={depositEmail}
+              onChange={(e) => setDepositEmail(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="deposit-bonus-list">
+          {DEPOSIT_BONUS_TIERS.slice().reverse().map((tier) => (
+            <div key={tier.min}>
+              <b>+{tier.percent}%</b>
+              <span>От {tier.min} ₽</span>
+            </div>
+          ))}
+        </div>
 
         <div className="deposit-actions">
           <button
             className="deposit-pay-button"
             onClick={handleDepositPayment}
+            disabled={isDepositSubmitting}
           >
-            Перейти к оплате
+            {isDepositSubmitting ? "Создаем платеж..." : "Перейти к оплате"}
           </button>
 
           <button

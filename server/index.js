@@ -16,10 +16,22 @@ const FRONTEND_URL = "https://redmoon-dayz.ru"
 const ADMIN_STEAM_IDS = new Set(["76561198722502186"])
 const AUTH_TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET || process.env.SESSION_SECRET || "redmoon_auth_secret"
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || ""
+const FREEKASSA_MERCHANT_ID = process.env.FREEKASSA_MERCHANT_ID || ""
+const FREEKASSA_SECRET_1 = process.env.FREEKASSA_SECRET_1 || ""
+const FREEKASSA_SECRET_2 = process.env.FREEKASSA_SECRET_2 || ""
+const FREEKASSA_CURRENCY = process.env.FREEKASSA_CURRENCY || "RUB"
 const uploadsDir = path.join(__dirname, "uploads")
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 120
+const MIN_DEPOSIT_AMOUNT = 10
+const MAX_DEPOSIT_AMOUNT = 100000
+const DEPOSIT_BONUS_TIERS = [
+  { min: 3000, percent: 30 },
+  { min: 2000, percent: 20 },
+  { min: 1000, percent: 15 },
+  { min: 500, percent: 10 }
+]
 const ROULETTE_EXCLUDED_PRODUCT_NAMES = new Set([ROULETTE_PRODUCT_NAME, "VIP-слот"])
 const promocodes = {
   REDMOONSTART: 100,
@@ -193,6 +205,70 @@ const sendDiscordNotification = (content) => {
   }).catch((err) => {
     console.log("DISCORD WEBHOOK ERROR:", err.message)
   })
+}
+
+const createHash = (value, algorithm = "md5") =>
+  crypto.createHash(algorithm).update(String(value)).digest("hex")
+
+const toMoneyAmount = (value) => {
+  const normalized = Number(String(value || "").replace(",", "."))
+
+  if (!Number.isFinite(normalized)) return 0
+
+  return Math.round(normalized * 100) / 100
+}
+
+const toKopecks = (value) => Math.round(toMoneyAmount(value) * 100)
+
+const formatPaymentAmount = (value) => {
+  const amount = toMoneyAmount(value)
+
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
+}
+
+const getDepositBonus = (amount) => {
+  const tier = DEPOSIT_BONUS_TIERS.find((item) => amount >= item.min)
+
+  return tier ? Math.floor(amount * tier.percent / 100) : 0
+}
+
+const getDepositTotal = (amount) => amount + getDepositBonus(amount)
+
+const isValidEmail = (value) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim())
+
+const createFreeKassaPaymentUrl = ({ paymentId, amount, email, steamId }) => {
+  const params = new URLSearchParams()
+  const formattedAmount = formatPaymentAmount(amount)
+  const signature = createHash(`${FREEKASSA_MERCHANT_ID}:${formattedAmount}:${FREEKASSA_SECRET_1}:${FREEKASSA_CURRENCY}:${paymentId}`)
+
+  params.set("m", FREEKASSA_MERCHANT_ID)
+  params.set("oa", formattedAmount)
+  params.set("currency", FREEKASSA_CURRENCY)
+  params.set("o", String(paymentId))
+  params.set("s", signature)
+  params.set("lang", "ru")
+  params.set("us_steamId", String(steamId))
+
+  if (email) {
+    params.set("em", email)
+  }
+
+  return `https://pay.fk.money/?${params.toString()}`
+}
+
+const verifyFreeKassaSignature = (payload) => {
+  const merchantId = payload.MERCHANT_ID
+  const amount = payload.AMOUNT
+  const orderId = payload.MERCHANT_ORDER_ID
+  const signature = String(payload.SIGN || "").toLowerCase()
+  const expectedSignature = createHash(`${merchantId}:${amount}:${FREEKASSA_SECRET_2}:${orderId}`).toLowerCase()
+
+  if (!signature || signature.length !== expectedSignature.length) {
+    return false
+  }
+
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
 }
 
 const getDiscountedPrice = (price, discountPercent) => {
@@ -589,6 +665,7 @@ const renderTestPaymentPage = (payment) => `
 `
 
 app.use(express.json())
+app.use(express.urlencoded({ extended: false }))
 app.use("/uploads", express.static(uploadsDir))
 
 app.use(cors({
@@ -2075,38 +2152,209 @@ app.post("/api/roulette/drops", (req, res) => {
 })
 
 app.post("/api/deposit", (req, res) => {
-  console.log("DEPOSIT BODY:", req.body)
+  const steamId = getRequestSteamId(req)
+  const requestUser = getRequestUser(req)
+  const amount = Math.floor(toMoneyAmount(req.body.amount))
+  const email = String(req.body.email || "").trim()
 
-  const { steamId, amount } = req.body
-
-  if (!steamId || !amount) {
-    return res.status(400).json({
-      error: "Нет steamId или amount" 
-    })
+  if (!steamId) {
+    return res.status(401).json({ error: "Войдите через Steam перед оплатой" })
   }
 
-  db.run(
-    `
-    INSERT INTO payments (steamId, amount, status, type, note, createdAt)
-    VALUES (?, ?, ?, ?, ?, ?)
-    `,
-    [steamId, Number(amount), "pending", "test-payment", "Пополнение через сайт", new Date().toISOString()],
-    function (err) {
+  if (!FREEKASSA_MERCHANT_ID || !FREEKASSA_SECRET_1 || !FREEKASSA_SECRET_2) {
+    return res.status(503).json({ error: "FreeKassa еще не настроена на сервере" })
+  }
+
+  if (!amount || amount < MIN_DEPOSIT_AMOUNT) {
+    return res.status(400).json({ error: `Минимальная сумма пополнения ${MIN_DEPOSIT_AMOUNT} ₽` })
+  }
+
+  if (amount > MAX_DEPOSIT_AMOUNT) {
+    return res.status(400).json({ error: `Максимальная сумма пополнения ${MAX_DEPOSIT_AMOUNT} ₽` })
+  }
+
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: "Укажите корректный email для оплаты" })
+  }
+
+  const bonus = getDepositBonus(amount)
+  const creditedAmount = getDepositTotal(amount)
+  const note = bonus > 0
+    ? `FreeKassa: ожидает оплату ${amount} ₽, к зачислению ${creditedAmount} ₽`
+    : `FreeKassa: ожидает оплату ${amount} ₽`
+
+  ensureUser(steamId, requestUser?.displayName || requestUser?.username || "Steam пользователь", (err) => {
+    if (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    db.run(
+      `
+      INSERT INTO payments (
+        steamId, amount, status, type, note, createdAt,
+        provider, providerAmount, creditedAmount, customerEmail
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        steamId,
+        creditedAmount,
+        "pending",
+        "freekassa",
+        note,
+        new Date().toISOString(),
+        "freekassa",
+        amount,
+        creditedAmount,
+        email
+      ],
+      function (err) {
+        if (err) {
+          return res.status(500).json({ error: err.message })
+        }
+
+        const paymentId = this.lastID
+        const paymentUrl = createFreeKassaPaymentUrl({
+          paymentId,
+          amount,
+          email,
+          steamId
+        })
+
+        res.json({
+          success: true,
+          paymentId,
+          provider: "freekassa",
+          paymentUrl,
+          amount,
+          bonus,
+          creditedAmount
+        })
+      }
+    )
+  })
+})
+
+app.all("/api/freekassa/notify", (req, res) => {
+  const payload = {
+    ...req.query,
+    ...req.body
+  }
+  const merchantId = String(payload.MERCHANT_ID || "")
+  const paymentId = String(payload.MERCHANT_ORDER_ID || "").trim()
+  const providerPaymentId = String(payload.intid || "")
+
+  if (!FREEKASSA_MERCHANT_ID || !FREEKASSA_SECRET_2) {
+    return res.status(503).send("FreeKassa is not configured")
+  }
+
+  if (merchantId !== String(FREEKASSA_MERCHANT_ID)) {
+    return res.status(400).send("wrong merchant")
+  }
+
+  if (!paymentId || !verifyFreeKassaSignature(payload)) {
+    return res.status(400).send("wrong sign")
+  }
+
+  db.serialize(() => {
+    db.run("BEGIN IMMEDIATE", (err) => {
       if (err) {
-        return res.status(500).json({ error: err.message })
+        return res.status(500).send(err.message)
       }
 
-      const paymentId = this.lastID
+      db.get(
+        "SELECT * FROM payments WHERE id = ?",
+        [paymentId],
+        (err, payment) => {
+          if (err) {
+            db.run("ROLLBACK")
+            return res.status(500).send(err.message)
+          }
 
-      console.log("PAYMENT ID:", paymentId)
+          if (!payment) {
+            db.run("ROLLBACK")
+            return res.status(404).send("payment not found")
+          }
 
-      res.json({
-        success: true,
-        paymentId,
-        paymentUrl: `https://redmoon-dayz.ru/api/test-payment/${paymentId}`
-      })
-    }
-  )
+          if (payment.status === "paid") {
+            db.run("COMMIT", () => res.send("YES"))
+            return
+          }
+
+          if (payment.status !== "pending") {
+            db.run("ROLLBACK")
+            return res.status(409).send("payment is not pending")
+          }
+
+          const expectedAmount = payment.providerAmount || payment.amount
+
+          if (toKopecks(payload.AMOUNT) !== toKopecks(expectedAmount)) {
+            db.run("ROLLBACK")
+            return res.status(400).send("wrong amount")
+          }
+
+          const creditedAmount = Number(payment.creditedAmount || payment.amount || 0)
+          const note = payment.providerAmount && payment.providerAmount !== creditedAmount
+            ? `Пополнение FreeKassa: оплачено ${payment.providerAmount} ₽, зачислено ${creditedAmount} ₽`
+            : `Пополнение FreeKassa: зачислено ${creditedAmount} ₽`
+
+          db.run(
+            `
+            UPDATE payments
+            SET status = ?, note = ?, providerPaymentId = ?
+            WHERE id = ? AND status = ?
+            `,
+            ["paid", note, providerPaymentId, paymentId, "pending"],
+            function (err) {
+              if (err) {
+                db.run("ROLLBACK")
+                return res.status(500).send(err.message)
+              }
+
+              if (this.changes === 0) {
+                db.run("ROLLBACK")
+                return res.status(409).send("payment already processed")
+              }
+
+              db.run(
+                `
+                UPDATE users
+                SET balance = balance + ?
+                WHERE steamId = ?
+                `,
+                [creditedAmount, payment.steamId],
+                (err) => {
+                  if (err) {
+                    db.run("ROLLBACK")
+                    return res.status(500).send(err.message)
+                  }
+
+                  db.run("COMMIT", (err) => {
+                    if (err) {
+                      return res.status(500).send(err.message)
+                    }
+
+                    sendDiscordNotification(
+                      `REDMOON: ${payment.steamId} пополнил баланс через FreeKassa на ${creditedAmount} ₽`
+                    )
+                    res.send("YES")
+                  })
+                }
+              )
+            }
+          )
+        }
+      )
+    })
+  })
+})
+
+app.get("/api/freekassa/success", (req, res) => {
+  res.redirect(`${FRONTEND_URL}?payment=success`)
+})
+
+app.get("/api/freekassa/fail", (req, res) => {
+  res.redirect(`${FRONTEND_URL}?payment=cancel`)
 })
 app.get("/api/test-payment/:id", (req, res) => {
   const paymentId = req.params.id

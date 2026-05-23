@@ -191,6 +191,11 @@ db.serialize(() => {
     const hasType = columns.some((col) => col.name === "type")
     const hasNote = columns.some((col) => col.name === "note")
     const hasCreatedAt = columns.some((col) => col.name === "createdAt")
+    const hasProvider = columns.some((col) => col.name === "provider")
+    const hasProviderPaymentId = columns.some((col) => col.name === "providerPaymentId")
+    const hasProviderAmount = columns.some((col) => col.name === "providerAmount")
+    const hasCreditedAmount = columns.some((col) => col.name === "creditedAmount")
+    const hasCustomerEmail = columns.some((col) => col.name === "customerEmail")
 
     if (!hasType) {
       db.run("ALTER TABLE payments ADD COLUMN type TEXT", (err) => {
@@ -210,6 +215,41 @@ db.serialize(() => {
       db.run("ALTER TABLE payments ADD COLUMN createdAt TEXT", (err) => {
         if (err) console.log("Ошибка добавления createdAt:", err.message)
         else console.log("Колонка payments.createdAt добавлена")
+      })
+    }
+
+    if (!hasProvider) {
+      db.run("ALTER TABLE payments ADD COLUMN provider TEXT", (err) => {
+        if (err) console.log("Ошибка добавления provider:", err.message)
+        else console.log("Колонка payments.provider добавлена")
+      })
+    }
+
+    if (!hasProviderPaymentId) {
+      db.run("ALTER TABLE payments ADD COLUMN providerPaymentId TEXT", (err) => {
+        if (err) console.log("Ошибка добавления providerPaymentId:", err.message)
+        else console.log("Колонка payments.providerPaymentId добавлена")
+      })
+    }
+
+    if (!hasProviderAmount) {
+      db.run("ALTER TABLE payments ADD COLUMN providerAmount INTEGER", (err) => {
+        if (err) console.log("Ошибка добавления providerAmount:", err.message)
+        else console.log("Колонка payments.providerAmount добавлена")
+      })
+    }
+
+    if (!hasCreditedAmount) {
+      db.run("ALTER TABLE payments ADD COLUMN creditedAmount INTEGER", (err) => {
+        if (err) console.log("Ошибка добавления creditedAmount:", err.message)
+        else console.log("Колонка payments.creditedAmount добавлена")
+      })
+    }
+
+    if (!hasCustomerEmail) {
+      db.run("ALTER TABLE payments ADD COLUMN customerEmail TEXT", (err) => {
+        if (err) console.log("Ошибка добавления customerEmail:", err.message)
+        else console.log("Колонка payments.customerEmail добавлена")
       })
     }
   })
