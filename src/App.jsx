@@ -201,10 +201,16 @@ const isRoulettePrizeProduct = (product) => {
 const getRoulettePrizePool = (items) =>
   items.filter(isRoulettePrizeProduct)
 
-const buildRouletteItems = (prizePool) => {
+const buildRouletteItems = (prizePool, landingPrize = null) => {
   if (!prizePool.length) return []
 
-  return Array.from({ length: 70 }, () => prizePool[Math.floor(Math.random() * prizePool.length)])
+  const items = Array.from({ length: 70 }, () => prizePool[Math.floor(Math.random() * prizePool.length)])
+
+  if (landingPrize) {
+    items[ROULETTE_LANDING_INDEX] = landingPrize
+  }
+
+  return items
 }
 
 function App() {
@@ -235,6 +241,7 @@ const [isRouletteOpening, setIsRouletteOpening] = useState(false)
 const [roulettePrize, setRoulettePrize] = useState(null)
 const [rouletteDrops, setRouletteDrops] = useState([])
 const [rouletteSettled, setRouletteSettled] = useState(false)
+const [roulettePrepared, setRoulettePrepared] = useState(false)
 const [isPurchasing, setIsPurchasing] = useState(false)
 const [customProducts, setCustomProducts] = useState([])
 const [adminProducts, setAdminProducts] = useState([])
@@ -277,8 +284,20 @@ const rouletteViewportRef = useRef(null)
 const spinStartTimerRef = useRef(null)
 const spinResultTimerRef = useRef(null)
 
+const getRouletteProductImage = (item) => {
+  const productName = item?.name || item?.productName
+  const matchedProduct = [...customProducts, ...products].find((product) => product.name === productName)
+
+  return item?.image || matchedProduct?.image || bannerImg
+}
+
 const getRouletteDropImage = (drop) =>
-  [...customProducts, ...products].find((product) => product.name === drop.productName)?.image || bannerImg
+  getRouletteProductImage({ productName: drop.productName, image: drop.image })
+
+const handleRouletteImageError = (event) => {
+  event.currentTarget.onerror = null
+  event.currentTarget.src = bannerImg
+}
 
 const isAdmin = user?.isAdmin || user?.id === ADMIN_STEAM_ID
 
@@ -399,7 +418,7 @@ const spinRoulette = () => {
   }
 
   if (!hasRoulettePrizes) {
-    showProfileNotice("В рулетке пока нет доступных призов", "error")
+    showProfileNotice("В рулетке пока нет доступных товаров", "error")
     return
   }
 
@@ -442,8 +461,7 @@ const spinRoulette = () => {
       }
 
       const prize = hydrateRoulettePrize(data.prize)
-      const nextItems = buildRouletteItems(roulettePrizePool)
-      nextItems[ROULETTE_LANDING_INDEX] = prize
+      const nextItems = buildRouletteItems(roulettePrizePool, prize)
 
       const targetOffset =
         ROULETTE_LANDING_INDEX * ROULETTE_ITEM_STEP +
@@ -465,6 +483,7 @@ const spinRoulette = () => {
 
       setRoulettePrize(null)
       setRouletteSettled(false)
+      setRoulettePrepared(true)
       setRouletteItems(nextItems)
       setRouletteOffset(0)
       setIsRouletteSpinning(false)
@@ -478,6 +497,7 @@ const spinRoulette = () => {
         setIsRouletteSpinning(false)
         setRoulettePrize(prize)
         setRouletteSettled(true)
+        setRoulettePrepared(false)
         showProfileNotice(`${prize.name} выпал как приз рулетки`)
       }, 5400)
     })
@@ -761,10 +781,10 @@ const filteredProducts = allProducts.filter((product) => {
 })
 
 useEffect(() => {
-  if (isRouletteSpinning || isRouletteOpening || rouletteSettled) return
+  if (isRouletteSpinning || isRouletteOpening || rouletteSettled || roulettePrepared) return
 
   setRouletteItems(buildRouletteItems(roulettePrizePool))
-}, [customProducts, isRouletteOpening, isRouletteSpinning, rouletteSettled])
+}, [customProducts, isRouletteOpening, isRouletteSpinning, rouletteSettled, roulettePrepared])
 
 const cartTotal = cart.reduce(
   (sum, item) => sum + item.priceValue * (item.quantity || 1),
@@ -1271,9 +1291,6 @@ const hideAdminProduct = (productId) => {
 
       loadAdminData()
       setCustomProducts((currentProducts) =>
-        currentProducts.filter((product) => product.id !== productId)
-      )
-      setRoulettePrizeProducts((currentProducts) =>
         currentProducts.filter((product) => product.id !== productId)
       )
       showProfileNotice("Товар скрыт из магазина")
@@ -2689,7 +2706,7 @@ margin: "0 auto",
         <div className="roulette-center-lines" />
         {rouletteItems.length === 0 && (
           <div className="roulette-empty">
-            В рулетке пока нет активных призов
+            В рулетке пока нет доступных товаров
           </div>
         )}
         <div
@@ -2711,7 +2728,11 @@ margin: "0 auto",
               key={`${product.name}-${index}`}
             >
               <div className="roulette-item-image">
-                <img src={product.image} alt={product.name} />
+                <img
+                  src={getRouletteProductImage(product)}
+                  alt={product.name}
+                  onError={handleRouletteImageError}
+                />
               </div>
               <h3>{product.name}</h3>
               <div className="roulette-price">{product.price}</div>
@@ -2773,7 +2794,11 @@ margin: "0 auto",
           <div className="roulette-history-list">
             {rouletteDrops.map((drop) => (
               <div className="roulette-history-item" key={drop.id}>
-                <img src={getRouletteDropImage(drop)} alt={drop.productName} />
+                <img
+                  src={getRouletteDropImage(drop)}
+                  alt={drop.productName}
+                  onError={handleRouletteImageError}
+                />
                 <div>
                   <strong>{drop.username || "Игрок REDMOON"}</strong>
                   <span>{drop.productName}</span>
