@@ -410,7 +410,7 @@ const hydrateRoulettePrize = (prize) => {
 }
 
 const spinRoulette = () => {
-  if (isRouletteSpinning || isRouletteOpening) return
+  if (isRouletteSpinning || isRouletteOpening || roulettePrepared) return
 
   if (!user?.id) {
     showProfileNotice("Войдите через Steam перед рулеткой", "error")
@@ -2748,7 +2748,7 @@ margin: "0 auto",
           <button
             className="roulette-spin-button"
             onClick={spinRoulette}
-            disabled={isRouletteSpinning || isRouletteOpening || !hasRoulettePrizes}
+            disabled={isRouletteSpinning || isRouletteOpening || roulettePrepared || !hasRoulettePrizes}
           >
             {isRouletteOpening
               ? "ОТКРЫВАЕМ..."
