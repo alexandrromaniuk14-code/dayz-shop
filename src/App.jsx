@@ -15,87 +15,102 @@ import lopataImg from "./images/lopata.png";
 import provolokaImg from "./images/provoloka.png";
 import ploskiImg from "./images/ploski.png";
 import verevkaImg from "./images/verevka.png";
+
+const getNumericPrice = (value) => Number(String(value ?? "").replace(/[^\d.]/g, "")) || 0
+const formatRubPrice = (value) => `${getNumericPrice(value)} RUB`
+
+const normalizeStoreProduct = (product) => {
+  const priceValue = getNumericPrice(product.priceValue || product.price || product.oldPriceValue)
+
+  return {
+    ...product,
+    price: formatRubPrice(priceValue),
+    priceValue,
+    oldPriceValue: getNumericPrice(product.oldPriceValue)
+  }
+}
+
 const products = [
   {
     name: "Gunter-2",
-    price: "250₽",
+    price: formatRubPrice(250),
     priceValue: 250,
      image: gunterImg,
      category: "Машины и запчасти",
   },
   {
     name: "Кувалда",
-    price: "30₽",
+    price: formatRubPrice(30),
     priceValue: 30,
      image: kuvaldaImg,
      category: "Все для строительства",
   },
   {
     name: "Коробка гвоздей",
-    price: "70₽",
+    price: formatRubPrice(70),
     priceValue: 70,
      image: gvozdiImg,
      category: "Все для строительства",
   },
   {
     name: "Плоскогубцы",
-    price: "45₽",
+    price: formatRubPrice(45),
     priceValue: 45,
      image: ploskiImg,
      category: "Все для строительства",
   },
   {
     name: "Веревка",
-    price: "20₽",
+    price: formatRubPrice(20),
     priceValue: 20,
      image: verevkaImg,
      category: "Все для строительства",
   },
   {
     name: "Проволока",
-    price: "65₽",
+    price: formatRubPrice(65),
     priceValue: 65,
      image: provolokaImg,
      category: "Все для строительства",
   },
   {
     name: "Лопата",
-    price: "40₽",
+    price: formatRubPrice(40),
     priceValue: 40,
      image: lopataImg,
      category: "Все для строительства",
   },
   {
     name: "Строительный рюзкак",
-    price: "160₽",
+    price: formatRubPrice(160),
     priceValue: 160,
      image: buildingbackpackImg,
      category: "Все для строительства",
   },
   {
     name: "10 листов металла",
-    price: "130₽",
+    price: formatRubPrice(130),
     priceValue: 130,
      image: metallImg,
      category: "Все для строительства",
   },
   {
     name: "Бочка",
-    price: "150₽",
+    price: formatRubPrice(150),
     priceValue: 150,
      image: bochkaImg,
      category: ["Все для строительства", "Фурнитура"]
   },
   { 
     name: "Топорик",
-    price: "35₽",
+    price: formatRubPrice(35),
     priceValue: 35,
      image: lilaxeImg,
      category: "Все для строительства",
   },
   { 
     name: "Кирка",
-    price: "35₽",
+    price: formatRubPrice(35),
     priceValue: 35,
      image: kirkaImg,
      category: "Все для строительства",
@@ -103,14 +118,14 @@ const products = [
   {
   name: "Флагшток",
   category: "Все для строительства",
-  price: "300₽",
+  price: formatRubPrice(300),
   priceValue: 300,
   image: flagImage
 },
   {
     name: "Рулетка REDMOON",
     description: "Кейс с случайным предметом из магазина",
-    price: "120₽",
+    price: formatRubPrice(120),
     priceValue: 120,
     image: bannerImg,
     category: "Эксклюзив",
@@ -119,7 +134,7 @@ const products = [
   {
     name: "VIP-слот",
     description: "VIP статус на 30 дней",
-    price: "500₽",
+    price: formatRubPrice(500),
     priceValue: 500,
     features: [
   "Приоритет входа на сервер",
@@ -397,7 +412,7 @@ const loadShopProducts = () =>
     .then((res) => res.json())
     .then((items) => {
       if (Array.isArray(items)) {
-        setCustomProducts(items)
+        setCustomProducts(items.map(normalizeStoreProduct))
       }
 
       return items
@@ -418,7 +433,7 @@ const hydrateRoulettePrize = (prize) => {
   return {
     ...(matchedProduct || {}),
     name: prizeName,
-    price: matchedProduct?.price || prize?.price || `${priceValue}₽`,
+    price: matchedProduct?.price || formatRubPrice(prize?.price || priceValue),
     priceValue,
     image: matchedProduct?.image || bannerImg
   }
@@ -1069,7 +1084,7 @@ const handleProductPurchase = (product) => {
       setBalance(data.balance)
       addPurchasesToHistory(data.purchase)
       setSelectedProduct(null)
-      showProfileNotice(`${product.name} куплен. Списано ${data.price} ₽`)
+      showProfileNotice(`${product.name} куплен. Списано ${formatRubPrice(data.price || product.priceValue)}`)
     })
     .catch((err) => {
       console.log("PURCHASE ERROR:", err)
@@ -1078,6 +1093,39 @@ const handleProductPurchase = (product) => {
     .finally(() => {
       setIsPurchasing(false)
     })
+}
+
+const handleMoveProductToCart = (product) => {
+  const cartProduct = normalizeStoreProduct(product)
+
+  setCart((currentCart) => {
+    const existingItem = currentCart.find((item) => item.name === cartProduct.name)
+
+    if (existingItem) {
+      return currentCart.map((item) =>
+        item.name === cartProduct.name
+          ? {
+              ...item,
+              price: cartProduct.price,
+              priceValue: cartProduct.priceValue,
+              quantity: (item.quantity || 1) + 1
+            }
+          : item
+      )
+    }
+
+    return [
+      ...currentCart,
+      {
+        ...cartProduct,
+        quantity: 1
+      }
+    ]
+  })
+
+  setSelectedProduct(null)
+  setCartOpen(true)
+  showProfileNotice(`${cartProduct.name} перемещен в корзину`)
 }
 
 const handleCartCheckout = () => {
@@ -1130,7 +1178,7 @@ const handleCartCheckout = () => {
       addPurchasesToHistory(data.purchases)
       setCart([])
       setCartOpen(false)
-      showProfileNotice(`Покупка успешно оплачена. Списано ${data.total} ₽`)
+      showProfileNotice(`Покупка успешно оплачена. Списано ${formatRubPrice(data.total)}`)
     })
     .catch((err) => {
       console.log("CART PURCHASE ERROR:", err)
@@ -2027,7 +2075,7 @@ paddingTop: "120px"
                 )}
                 <strong>{adminProductForm.name || "Название товара"}</strong>
                 <em>
-                  {Math.max(Math.round(Number(adminProductForm.price || 0) * (100 - Number(adminProductForm.discountPercent || 0)) / 100), 0)} ₽
+                  {formatRubPrice(Math.max(Math.round(Number(adminProductForm.price || 0) * (100 - Number(adminProductForm.discountPercent || 0)) / 100), 0))}
                 </em>
               </div>
             </form>
@@ -2044,7 +2092,7 @@ paddingTop: "120px"
                       <div>
                         <strong>{product.name}</strong>
                         <span>
-                          {product.category} · {product.priceValue} ₽
+                          {product.category} · {formatRubPrice(product.priceValue)}
                           {product.discountPercent ? ` · скидка ${product.discountPercent}%` : ""}
                           · {product.isActive ? "виден" : "скрыт"}
                         </span>
@@ -2185,7 +2233,7 @@ paddingTop: "120px"
                       <td>{item.username}</td>
                       <td>{item.steamId}</td>
                       <td>{item.name}</td>
-                      <td>{item.priceValue} ₽</td>
+                      <td>{formatRubPrice(item.priceValue)}</td>
                       <td>{item.quantity}</td>
                       <td>{item.date}</td>
                       <td>
@@ -2440,7 +2488,7 @@ paddingTop: "120px"
                         <tr key={item.id}>
                           <td>{index + 1}</td>
                           <td>{item.name}</td>
-                          <td>{item.priceValue} ₽</td>
+                          <td>{formatRubPrice(item.priceValue)}</td>
                           <td>{item.quantity} ед.</td>
                           <td>{item.date}</td>
                         </tr>
@@ -2742,7 +2790,7 @@ margin: "0 auto",
 
       <div className="price-tag">
   {product.discountPercent ? (
-    <span className="old-price-tag">{product.oldPriceValue}₽</span>
+    <span className="old-price-tag">{formatRubPrice(product.oldPriceValue)}</span>
   ) : null}
   {product.price}
 </div>
@@ -2762,7 +2810,7 @@ margin: "0 auto",
     cursor: "pointer"
   }}
 >
-  {product.type === "roulette" ? `Открыть за ${product.price}` : "Купить"}
+  {product.type === "roulette" ? `Открыть за ${formatRubPrice(product.priceValue || product.price)}` : "Купить"}
 </button>
     </div>
   ))}
@@ -2845,7 +2893,7 @@ margin: "0 auto",
       <div className="roulette-controls-row">
         <div className="roulette-cost-card">
           <span>СТОИМОСТЬ КРУТКИ</span>
-          <strong>{ROULETTE_PRICE} ₽</strong>
+          <strong>{formatRubPrice(ROULETTE_PRICE)}</strong>
           <button
             className="roulette-spin-button"
             onClick={spinRoulette}
@@ -2860,13 +2908,13 @@ margin: "0 auto",
                   : !user?.id
                   ? "ВОЙТИ ЧЕРЕЗ STEAM"
                   : hasRouletteFunds
-                    ? `КРУТИТЬ ЗА ${ROULETTE_PRICE} ₽`
+                    ? `КРУТИТЬ ЗА ${formatRubPrice(ROULETTE_PRICE)}`
                     : "ПОПОЛНИТЬ БАЛАНС"}
           </button>
           <em>
             {hasRouletteFunds
               ? `У вас: ${balance} ₽`
-              : `У вас: ${balance} ₽. Нужно ${ROULETTE_PRICE} ₽`}
+              : `У вас: ${balance} ₽. Нужно ${formatRubPrice(ROULETTE_PRICE)}`}
           </em>
         </div>
 
@@ -3122,7 +3170,7 @@ overflowY: "auto",
     marginBottom: "22px"
   }}
 >
-  {selectedProduct.price}
+  {formatRubPrice(selectedProduct.priceValue || selectedProduct.price)}
 </h1>
 
       <button
@@ -3140,6 +3188,24 @@ overflowY: "auto",
       }}
       >
         {isPurchasing ? "Покупка..." : "Перейти к оплате"}
+      </button>
+
+      <button
+        onClick={() => handleMoveProductToCart(selectedProduct)}
+        disabled={isPurchasing}
+        style={{
+        width: "100%",
+        padding: "12px",
+        backgroundColor: "rgba(255,255,255,0.08)",
+        border: "1px solid rgba(255,255,255,0.18)",
+        color: "white",
+        borderRadius: "8px",
+        cursor: "pointer",
+        fontWeight: "bold",
+        marginBottom: "10px"
+      }}
+      >
+        Переместить в корзину
       </button>
 
       <button
@@ -3448,7 +3514,7 @@ disabled={isPurchasing}
   fontWeight: "bold"
 }}>
   <span>Итого:</span>
-  <span>{cartTotal} ₽</span>
+  <span>{formatRubPrice(cartTotal)}</span>
 </div>
           </button>
         </>
