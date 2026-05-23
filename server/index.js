@@ -164,6 +164,9 @@ const isAdminSteamId = (steamId) => ADMIN_STEAM_IDS.has(String(steamId || ""))
 
 const isAdminRequest = (req) => isAdminSteamId(getRequestSteamId(req))
 
+const getAdminTargetSteamId = (req) =>
+  String(req.body?.steamId || req.body?.targetSteamId || getRequestSteamId(req) || "").trim()
+
 const requireAdmin = (req, res, next) => {
   if (!isAdminRequest(req)) {
     return res.status(403).json({ error: "Доступ только для администратора" })
@@ -1252,7 +1255,7 @@ app.get("/api/admin/top-products", requireAdmin, (req, res) => {
 })
 
 app.post("/api/admin/balance/add", requireAdmin, (req, res) => {
-  const steamId = String(req.body.steamId || "").trim()
+  const steamId = getAdminTargetSteamId(req)
   const amount = Math.floor(Number(req.body.amount || 0))
   const note = String(req.body.note || "").trim()
   const username = "Manual top-up"
@@ -1327,7 +1330,7 @@ app.post("/api/admin/balance/add", requireAdmin, (req, res) => {
 })
 
 app.post("/api/admin/balance/subtract", requireAdmin, (req, res) => {
-  const steamId = String(req.body.steamId || "").trim()
+  const steamId = getAdminTargetSteamId(req)
   const amount = Math.floor(Number(req.body.amount || 0))
   const note = String(req.body.note || "").trim()
   const createdAt = new Date().toISOString()
@@ -1367,12 +1370,14 @@ app.post("/api/admin/balance/subtract", requireAdmin, (req, res) => {
 })
 
 app.post("/api/admin/balance/set", requireAdmin, (req, res) => {
-  const steamId = String(req.body.steamId || "").trim()
-  const amount = Math.max(Math.floor(Number(req.body.amount || 0)), 0)
+  const steamId = getAdminTargetSteamId(req)
+  const rawAmount = Number(req.body.amount || 0)
+  const amount = Math.max(Math.floor(rawAmount), 0)
   const note = String(req.body.note || "").trim()
   const createdAt = new Date().toISOString()
 
   if (!steamId) return res.status(400).json({ error: "Укажи SteamID игрока" })
+  if (!Number.isFinite(rawAmount) || rawAmount < 0) return res.status(400).json({ error: "Укажи сумму в рублях" })
 
   ensureUser(steamId, "Manual edit", (err) => {
     if (err) return res.status(500).json({ error: err.message })

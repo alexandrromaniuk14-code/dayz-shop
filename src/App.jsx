@@ -1248,10 +1248,30 @@ const handleAdminBalanceSubmit = (event) => {
     return
   }
 
+  const targetSteamId = String(adminBalanceForm.steamId || user?.id || "").trim()
+
+  if (!targetSteamId) {
+    showProfileNotice("Укажи SteamID игрока", "error")
+    return
+  }
+
+  const requestedAmount = Math.floor(Number(adminBalanceForm.amount))
+  const isSetBalanceMode = adminBalanceForm.mode === "set"
+
+  if (
+    !adminBalanceForm.amount ||
+    !Number.isFinite(requestedAmount) ||
+    requestedAmount < 0 ||
+    (!isSetBalanceMode && requestedAmount <= 0)
+  ) {
+    showProfileNotice(isSetBalanceMode ? "Укажи сумму в рублях" : "Укажи сумму больше 0", "error")
+    return
+  }
+
   const endpointByMode = {
-    add: "https://dayz-shop.onrender.com/api/admin/balance/add",
-    subtract: "https://dayz-shop.onrender.com/api/admin/balance/subtract",
-    set: "https://dayz-shop.onrender.com/api/admin/balance/set"
+    add: `${API_BASE_URL}/api/admin/balance/add`,
+    subtract: `${API_BASE_URL}/api/admin/balance/subtract`,
+    set: `${API_BASE_URL}/api/admin/balance/set`
   }
 
   authorizedFetch(endpointByMode[adminBalanceForm.mode], {
@@ -1260,18 +1280,36 @@ const handleAdminBalanceSubmit = (event) => {
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(adminBalanceForm)
+    body: JSON.stringify({
+      ...adminBalanceForm,
+      steamId: targetSteamId
+    })
   })
     .then((res) =>
-      res.json().then((data) => ({
-        ok: res.ok,
-        data
-      }))
+      res.text().then((text) => {
+        let data = {}
+
+        try {
+          data = text ? JSON.parse(text) : {}
+        } catch {
+          data = { error: text || "Сервер вернул некорректный ответ" }
+        }
+
+        return {
+          ok: res.ok,
+          data
+        }
+      })
     )
     .then(({ ok, data }) => {
       if (!ok) {
         showProfileNotice(data.error || "Не удалось начислить баланс", "error")
         return
+      }
+
+      if (String(data.steamId) === String(user?.id)) {
+        setBalance(data.balance || 0)
+        setUser((currentUser) => currentUser ? { ...currentUser, balance: data.balance || 0 } : currentUser)
       }
 
       setAdminBalanceForm({
@@ -1513,8 +1551,9 @@ backgroundAttachment: "fixed",
 }}
         >
   <a
-  href="https://discord.gg/KkVftnGe"
+  href="https://discord.gg/yDJvVvvkGu"
   target="_blank"
+  rel="noopener noreferrer"
   className="discord-button"
 >
   <svg
@@ -1527,15 +1566,14 @@ backgroundAttachment: "fixed",
   </svg>
 </a>
 <a
-  href="https://vk.com/ТВОЯ_ГРУППА"
-  target="_blank"
   className="vk-button"
 >
   VK
 </a>
 <a
-  href="https://t.me/ТВОЙ_КАНАЛ"
+  href="https://t.me/+sB-7z34FgUVlZDgy"
   target="_blank"
+  rel="noopener noreferrer"
   className="tg-button"
 >
   <svg
