@@ -7,12 +7,15 @@ const multer = require("multer")
 const path = require("path")
 const fs = require("fs")
 const crypto = require("crypto")
+const https = require("https")
 const db = require("./database")
 
 const app = express()
 
 app.set("trust proxy", 1)
 const FRONTEND_URL = "https://redmoon-dayz.ru"
+const FRONTEND_HOST = "redmoon-dayz.ru"
+const FRONTEND_HOSTING_IP = process.env.FRONTEND_HOSTING_IP || "31.31.198.142"
 const ADMIN_STEAM_IDS = new Set(["76561198722502186"])
 const AUTH_TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET || process.env.SESSION_SECRET || "redmoon_auth_secret"
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || ""
@@ -720,9 +723,65 @@ passport.use(new SteamStrategy({
   )
 }))
 
-app.get("/", (req, res) => {
-  res.send("Backend работает")
-})
+const hopByHopHeaders = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade"
+])
+
+function proxyFrontendFromHosting(req, res, next) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return next()
+  }
+
+  const proxyRequest = https.request({
+    host: FRONTEND_HOSTING_IP,
+    servername: FRONTEND_HOST,
+    method: req.method,
+    path: req.originalUrl,
+    headers: {
+      Host: FRONTEND_HOST,
+      "User-Agent": req.get("user-agent") || "",
+      Accept: req.get("accept") || "*/*",
+      "Accept-Language": req.get("accept-language") || "",
+      "Accept-Encoding": req.get("accept-encoding") || ""
+    }
+  }, (proxyResponse) => {
+    res.status(proxyResponse.statusCode || 502)
+
+    for (const [header, value] of Object.entries(proxyResponse.headers)) {
+      if (!hopByHopHeaders.has(header.toLowerCase()) && value !== undefined) {
+        res.setHeader(header, value)
+      }
+    }
+
+    proxyResponse.pipe(res)
+  })
+
+  proxyRequest.setTimeout(10000, () => {
+    proxyRequest.destroy(new Error("Frontend proxy timeout"))
+  })
+
+  proxyRequest.on("error", (err) => {
+    console.log("Frontend proxy failed:", err.message)
+
+    if (!res.headersSent) {
+      res.status(502).send("Frontend временно недоступен")
+      return
+    }
+
+    res.end()
+  })
+
+  proxyRequest.end()
+}
+
+app.get(/^(?!\/(?:api|auth|uploads)(?:\/|$)).*/, proxyFrontendFromHosting)
 
 app.get("/auth/steam", passport.authenticate("steam"))
 
