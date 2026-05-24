@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Runtime database files must never be deployed from git.
+server/*.db
+server/*.db-*
+server/*.sqlite
+server/*.sqlite-*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

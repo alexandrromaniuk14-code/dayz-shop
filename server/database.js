@@ -1,8 +1,25 @@
 const path = require("path")
+const fs = require("fs")
 const sqlite3 = require("sqlite3").verbose()
 
-const dbPath = path.join(__dirname, "shop.db")
+const legacyDbPath = path.join(__dirname, "shop.db")
+const renderDiskDir = "/var/data"
+const defaultPersistentDir = fs.existsSync(renderDiskDir) ? renderDiskDir : __dirname
+const dbPath = process.env.DATABASE_PATH || process.env.SQLITE_DB_PATH || path.join(defaultPersistentDir, "shop.db")
+const dbDir = path.dirname(dbPath)
+
+fs.mkdirSync(dbDir, { recursive: true })
+
+if (dbPath !== legacyDbPath && !fs.existsSync(dbPath) && fs.existsSync(legacyDbPath)) {
+  fs.copyFileSync(legacyDbPath, dbPath)
+  console.log("DB MIGRATED FROM:", legacyDbPath)
+}
+
 console.log("DB FILE:", dbPath)
+
+if (dbPath === legacyDbPath) {
+  console.log("WARNING: SQLite DB is stored inside the app directory. Use DATABASE_PATH or /var/data/shop.db for persistent production balances.")
+}
 
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
