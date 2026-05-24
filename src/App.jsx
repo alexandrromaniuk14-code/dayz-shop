@@ -18,6 +18,13 @@ import verevkaImg from "./images/verevka.webp";
 
 const getNumericPrice = (value) => Number(String(value ?? "").replace(/[^\d.-]/g, "")) || 0
 const formatRubPrice = (value) => `${getNumericPrice(value)} RUB`
+const USD_TO_RUB_RATE = 71.209
+const USD_RATE_LABEL = "1 USD = 71.209 RUB"
+const formatUsdPrice = (value) => {
+  const usdValue = getNumericPrice(value) / USD_TO_RUB_RATE
+
+  return `$${usdValue.toFixed(2)} USD`
+}
 
 const normalizeStoreProduct = (product) => {
   const priceValue = getNumericPrice(product.priceValue || product.price || product.oldPriceValue)
@@ -3962,6 +3969,7 @@ overflowY: "auto",
                 <div className="cart-item-copy">
                   <h3>{item.name}</h3>
                   <span>{formatRubPrice(item.priceValue || item.price)}</span>
+                  <em>{formatUsdPrice(item.priceValue || item.price)}</em>
                 </div>
 
                 <div className="cart-item-controls">
@@ -4012,6 +4020,7 @@ overflowY: "auto",
                 <div className="cart-item-total">
                   <span>Сумма</span>
                   <strong>{formatRubPrice(Number(item.priceValue || getNumericPrice(item.price)) * (item.quantity || 1))}</strong>
+                  <em>{formatUsdPrice(Number(item.priceValue || getNumericPrice(item.price)) * (item.quantity || 1))}</em>
                 </div>
 
                 <button
@@ -4026,8 +4035,14 @@ overflowY: "auto",
           </div>
 
           <div className="cart-summary-row">
-            <span>Итого</span>
-            <strong>{formatRubPrice(cartTotal)}</strong>
+            <div>
+              <span>Итого</span>
+              <small>Курс: {USD_RATE_LABEL}</small>
+            </div>
+            <div>
+              <strong>{formatRubPrice(cartTotal)}</strong>
+              <em>{formatUsdPrice(cartTotal)}</em>
+            </div>
           </div>
           <button
             className="cart-checkout-button"
