@@ -7,6 +7,7 @@ const multer = require("multer")
 const path = require("path")
 const fs = require("fs")
 const crypto = require("crypto")
+const https = require("https")
 const db = require("./database")
 
 const app = express()
@@ -21,6 +22,8 @@ const FREEKASSA_SECRET_1 = process.env.FREEKASSA_SECRET_1 || ""
 const FREEKASSA_SECRET_2 = process.env.FREEKASSA_SECRET_2 || ""
 const FREEKASSA_CURRENCY = process.env.FREEKASSA_CURRENCY || "RUB"
 const ENABLE_TEST_PAYMENTS = process.env.ENABLE_TEST_PAYMENTS === "1"
+const DEFAULT_USD_TO_RUB_RATE = Number(process.env.DEFAULT_USD_TO_RUB_RATE || 71.209)
+const EXCHANGE_RATE_CACHE_TTL_MS = 1000 * 60 * 60 * 3
 const uploadsDir = path.join(__dirname, "uploads")
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
@@ -38,6 +41,14 @@ const promocodes = {
   REDMOONSTART: 100,
   REDMOONSUMMER: 100,
   BAK10: 100
+}
+
+let usdRubRateCache = {
+  rate: DEFAULT_USD_TO_RUB_RATE,
+  source: "fallback",
+  date: null,
+  updatedAt: null,
+  expiresAt: 0
 }
 
 const productCatalog = {
@@ -86,6 +97,83 @@ const upload = multer({
 })
 
 const getImageUrl = (file) => file ? `https://redmoon-dayz.ru/uploads/${file.filename}` : null
+
+const requestText = (url) =>
+  new Promise((resolve, reject) => {
+    const request = https.get(url, { timeout: 7000 }, (response) => {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        response.resume()
+        reject(new Error(`Exchange rate request failed: ${response.statusCode}`))
+        return
+      }
+
+      let data = ""
+
+      response.setEncoding("utf8")
+      response.on("data", (chunk) => {
+        data += chunk
+      })
+      response.on("end", () => resolve(data))
+    })
+
+    request.on("timeout", () => {
+      request.destroy(new Error("Exchange rate request timeout"))
+    })
+    request.on("error", reject)
+  })
+
+const fetchUsdRubRateFromCbr = async () => {
+  const xml = await requestText("https://www.cbr.ru/scripts/XML_daily.asp")
+  const usdBlock = (xml.match(/<Valute[^>]*>[\s\S]*?<\/Valute>/g) || [])
+    .find((block) => block.includes("<CharCode>USD</CharCode>"))
+  const rateValue = usdBlock?.match(/<Value>([^<]+)<\/Value>/)?.[1]
+  const date = xml.match(/<ValCurs[^>]*Date="([^"]+)"/)?.[1] || null
+  const rate = Number(String(rateValue || "").replace(",", "."))
+
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error("USD/RUB rate not found in CBR response")
+  }
+
+  return {
+    rate,
+    source: "cbr.ru",
+    date
+  }
+}
+
+const getUsdRubRate = async () => {
+  const now = Date.now()
+
+  if (usdRubRateCache.expiresAt > now) {
+    return {
+      ...usdRubRateCache,
+      cached: true
+    }
+  }
+
+  try {
+    const freshRate = await fetchUsdRubRateFromCbr()
+
+    usdRubRateCache = {
+      ...freshRate,
+      updatedAt: new Date().toISOString(),
+      expiresAt: now + EXCHANGE_RATE_CACHE_TTL_MS
+    }
+  } catch (err) {
+    console.log("USD/RUB RATE ERROR:", err.message)
+
+    usdRubRateCache = {
+      ...usdRubRateCache,
+      source: usdRubRateCache.updatedAt ? usdRubRateCache.source : "fallback",
+      expiresAt: now + 1000 * 60 * 15
+    }
+  }
+
+  return {
+    ...usdRubRateCache,
+    cached: false
+  }
+}
 
 const encodeTokenPart = (value) =>
   Buffer.from(JSON.stringify(value))
@@ -889,6 +977,29 @@ app.get("/api/user/:steamId", requireOwnSteamIdOrAdmin, (req, res) => {
       )
     }
   )
+})
+
+app.get("/api/exchange-rate/usd", async (req, res) => {
+  try {
+    const rateData = await getUsdRubRate()
+
+    res.json({
+      base: "USD",
+      quote: "RUB",
+      rate: rateData.rate,
+      label: `1 USD = ${rateData.rate} RUB`,
+      source: rateData.source,
+      date: rateData.date,
+      updatedAt: rateData.updatedAt,
+      cached: rateData.cached
+    })
+  } catch (err) {
+    res.status(500).json({
+      error: "Не удалось получить курс валют",
+      rate: DEFAULT_USD_TO_RUB_RATE,
+      label: `1 USD = ${DEFAULT_USD_TO_RUB_RATE} RUB`
+    })
+  }
 })
 
 app.post("/api/promocodes/redeem", promocodeRateLimiter, (req, res) => {

@@ -18,10 +18,11 @@ import verevkaImg from "./images/verevka.webp";
 
 const getNumericPrice = (value) => Number(String(value ?? "").replace(/[^\d.-]/g, "")) || 0
 const formatRubPrice = (value) => `${getNumericPrice(value)} RUB`
-const USD_TO_RUB_RATE = 71.209
-const USD_RATE_LABEL = "1 USD = 71.209 RUB"
-const formatUsdPrice = (value) => {
-  const usdValue = getNumericPrice(value) / USD_TO_RUB_RATE
+const FALLBACK_USD_TO_RUB_RATE = 71.209
+const getUsdRateLabel = (rate) => `1 USD = ${Number(rate).toFixed(3)} RUB`
+const formatUsdPrice = (value, rate = FALLBACK_USD_TO_RUB_RATE) => {
+  const safeRate = Number(rate) > 0 ? Number(rate) : FALLBACK_USD_TO_RUB_RATE
+  const usdValue = getNumericPrice(value) / safeRate
 
   return `$${usdValue.toFixed(2)} USD`
 }
@@ -528,6 +529,8 @@ const [isDepositSubmitting, setIsDepositSubmitting] = useState(false)
 const [cart, setCart] = useState([])
 const [cartOpen, setCartOpen] = useState(false)
 const [message, setMessage] = useState(null)
+const [usdRubRate, setUsdRubRate] = useState(FALLBACK_USD_TO_RUB_RATE)
+const [usdRubRateSource, setUsdRubRateSource] = useState("fallback")
 const [isHeaderCompact, setIsHeaderCompact] = useState(false)
 const [profileTab, setProfileTab] = useState("info")
 const [promoCode, setPromoCode] = useState("")
@@ -941,6 +944,36 @@ useEffect(() => {
     window.removeEventListener("scroll", handleHeaderScroll)
   }
 }, [])
+
+useEffect(() => {
+  let isMounted = true
+
+  fetch(`${API_BASE_URL}/api/exchange-rate/usd`)
+    .then((res) => {
+      if (!res.ok) throw new Error(`Exchange rate load failed: ${res.status}`)
+      return res.json()
+    })
+    .then((data) => {
+      const nextRate = Number(data.rate)
+
+      if (isMounted && Number.isFinite(nextRate) && nextRate > 0) {
+        setUsdRubRate(nextRate)
+        setUsdRubRateSource(data.source || "api")
+      }
+    })
+    .catch((err) => {
+      console.log("USD/RUB RATE LOAD ERROR:", err)
+      if (isMounted) {
+        setUsdRubRate(FALLBACK_USD_TO_RUB_RATE)
+        setUsdRubRateSource("fallback")
+      }
+    })
+
+  return () => {
+    isMounted = false
+  }
+}, [])
+
 useEffect(() => {
   console.log("CURRENT URL:", window.location.href)
   console.log("SEARCH:", window.location.search)
@@ -3969,7 +4002,7 @@ overflowY: "auto",
                 <div className="cart-item-copy">
                   <h3>{item.name}</h3>
                   <span>{formatRubPrice(item.priceValue || item.price)}</span>
-                  <em>{formatUsdPrice(item.priceValue || item.price)}</em>
+                  <em>{formatUsdPrice(item.priceValue || item.price, usdRubRate)}</em>
                 </div>
 
                 <div className="cart-item-controls">
@@ -4020,7 +4053,7 @@ overflowY: "auto",
                 <div className="cart-item-total">
                   <span>Сумма</span>
                   <strong>{formatRubPrice(Number(item.priceValue || getNumericPrice(item.price)) * (item.quantity || 1))}</strong>
-                  <em>{formatUsdPrice(Number(item.priceValue || getNumericPrice(item.price)) * (item.quantity || 1))}</em>
+                  <em>{formatUsdPrice(Number(item.priceValue || getNumericPrice(item.price)) * (item.quantity || 1), usdRubRate)}</em>
                 </div>
 
                 <button
@@ -4037,11 +4070,11 @@ overflowY: "auto",
           <div className="cart-summary-row">
             <div>
               <span>Итого</span>
-              <small>Курс: {USD_RATE_LABEL}</small>
+              <small>Курс: {getUsdRateLabel(usdRubRate)}{usdRubRateSource === "fallback" ? " (резервный)" : ""}</small>
             </div>
             <div>
               <strong>{formatRubPrice(cartTotal)}</strong>
-              <em>{formatUsdPrice(cartTotal)}</em>
+              <em>{formatUsdPrice(cartTotal, usdRubRate)}</em>
             </div>
           </div>
           <button
