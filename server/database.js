@@ -7,7 +7,6 @@ const renderDiskDir = "/var/data"
 const defaultPersistentDir = fs.existsSync(renderDiskDir) ? renderDiskDir : __dirname
 const dbPath = process.env.DATABASE_PATH || process.env.SQLITE_DB_PATH || path.join(defaultPersistentDir, "shop.db")
 const dbDir = path.dirname(dbPath)
-const isProductionRuntime = process.env.NODE_ENV === "production" || process.env.RENDER
 
 fs.mkdirSync(dbDir, { recursive: true })
 
@@ -20,10 +19,6 @@ console.log("DB FILE:", dbPath)
 
 if (dbPath === legacyDbPath) {
   console.log("WARNING: SQLite DB is stored inside the app directory. Use DATABASE_PATH or /var/data/shop.db for persistent production balances.")
-
-  if (isProductionRuntime && process.env.ALLOW_EPHEMERAL_SQLITE !== "1") {
-    throw new Error("Refusing to start with ephemeral SQLite storage in production. Set DATABASE_PATH to a persistent disk path, for example /var/data/shop.db.")
-  }
 }
 
 const db = new sqlite3.Database(dbPath, (err) => {
