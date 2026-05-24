@@ -20,6 +20,7 @@ const FREEKASSA_MERCHANT_ID = process.env.FREEKASSA_MERCHANT_ID || ""
 const FREEKASSA_SECRET_1 = process.env.FREEKASSA_SECRET_1 || ""
 const FREEKASSA_SECRET_2 = process.env.FREEKASSA_SECRET_2 || ""
 const FREEKASSA_CURRENCY = process.env.FREEKASSA_CURRENCY || "RUB"
+const ENABLE_TEST_PAYMENTS = process.env.ENABLE_TEST_PAYMENTS === "1"
 const uploadsDir = path.join(__dirname, "uploads")
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
@@ -164,6 +165,21 @@ const isAdminSteamId = (steamId) => ADMIN_STEAM_IDS.has(String(steamId || ""))
 
 const isAdminRequest = (req) => isAdminSteamId(getRequestSteamId(req))
 
+const requireOwnSteamIdOrAdmin = (req, res, next) => {
+  const requestedSteamId = String(req.params.steamId || "").trim()
+  const currentSteamId = getRequestSteamId(req)
+
+  if (!currentSteamId) {
+    return res.status(401).json({ error: "Войдите через Steam" })
+  }
+
+  if (requestedSteamId !== currentSteamId && !isAdminSteamId(currentSteamId)) {
+    return res.status(403).json({ error: "Можно смотреть только свои операции" })
+  }
+
+  next()
+}
+
 const getAdminTargetSteamId = (req) =>
   String(req.body?.steamId || req.body?.targetSteamId || getRequestSteamId(req) || "").trim()
 
@@ -195,6 +211,74 @@ const writeAdminLog = (req, action, target, details = "") => {
     }
   )
 }
+
+const rateLimitBuckets = new Map()
+
+const getRateLimitIdentity = (req) => {
+  const steamId = getRequestSteamId(req)
+  const forwardedFor = String(req.get("x-forwarded-for") || "").split(",")[0].trim()
+
+  return steamId || forwardedFor || req.ip || req.socket?.remoteAddress || "unknown"
+}
+
+const createRateLimiter = ({ windowMs, max, keyPrefix, message }) => (req, res, next) => {
+  const now = Date.now()
+  const identity = getRateLimitIdentity(req)
+  const key = `${keyPrefix}:${identity}`
+  const timestamps = (rateLimitBuckets.get(key) || []).filter((time) => now - time < windowMs)
+
+  if (timestamps.length >= max) {
+    console.warn(`RATE LIMIT: ${keyPrefix}`, {
+      identity,
+      method: req.method,
+      path: req.originalUrl
+    })
+
+    return res.status(429).json({
+      error: message || "Слишком много запросов. Попробуйте чуть позже."
+    })
+  }
+
+  timestamps.push(now)
+  rateLimitBuckets.set(key, timestamps)
+
+  next()
+}
+
+const purchaseRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 12,
+  keyPrefix: "purchase",
+  message: "Слишком много попыток покупки. Подождите минуту."
+})
+
+const paymentRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 8,
+  keyPrefix: "payment",
+  message: "Слишком много попыток оплаты. Подождите минуту."
+})
+
+const promocodeRateLimiter = createRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 8,
+  keyPrefix: "promocode",
+  message: "Слишком много попыток активации промокода. Попробуйте позже."
+})
+
+const transferRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 6,
+  keyPrefix: "transfer",
+  message: "Слишком много переводов. Подождите минуту."
+})
+
+const adminMutationRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyPrefix: "admin-mutation",
+  message: "Слишком много админ-действий. Подождите минуту."
+})
 
 const sendDiscordNotification = (content) => {
   if (!DISCORD_WEBHOOK_URL) return
@@ -669,8 +753,16 @@ const renderTestPaymentPage = (payment) => `
 </html>
 `
 
-app.use(express.json())
-app.use(express.urlencoded({ extended: false }))
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff")
+  res.setHeader("X-Frame-Options", "DENY")
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin")
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+  next()
+})
+
+app.use(express.json({ limit: "64kb" }))
+app.use(express.urlencoded({ extended: false, limit: "64kb" }))
 app.use("/uploads", express.static(uploadsDir))
 
 app.use(cors({
@@ -755,7 +847,7 @@ app.get("/api/user", (req, res) => {
   }
 })
 
-app.get("/api/user/:steamId", (req, res) => {
+app.get("/api/user/:steamId", requireOwnSteamIdOrAdmin, (req, res) => {
   const steamId = req.params.steamId
   const authUser = getRequestUser(req)
   const username =
@@ -799,7 +891,7 @@ app.get("/api/user/:steamId", (req, res) => {
   )
 })
 
-app.post("/api/promocodes/redeem", (req, res) => {
+app.post("/api/promocodes/redeem", promocodeRateLimiter, (req, res) => {
   const { code } = req.body
   const normalizedCode = String(code || "").trim().toUpperCase()
   const currentSteamId = getRequestSteamId(req)
@@ -993,7 +1085,7 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
   )
 })
 
-app.post("/api/admin/products", requireAdmin, upload.single("image"), (req, res) => {
+app.post("/api/admin/products", requireAdmin, adminMutationRateLimiter, upload.single("image"), (req, res) => {
   const name = String(req.body.name || "").trim()
   const description = String(req.body.description || "").trim()
   const category = String(req.body.category || "").trim()
@@ -1044,7 +1136,7 @@ app.post("/api/admin/products", requireAdmin, upload.single("image"), (req, res)
   )
 })
 
-app.put("/api/admin/products/:id", requireAdmin, upload.single("image"), (req, res) => {
+app.put("/api/admin/products/:id", requireAdmin, adminMutationRateLimiter, upload.single("image"), (req, res) => {
   const id = req.params.id
   const name = String(req.body.name || "").trim()
   const description = String(req.body.description || "").trim()
@@ -1098,7 +1190,7 @@ app.put("/api/admin/products/:id", requireAdmin, upload.single("image"), (req, r
   })
 })
 
-app.delete("/api/admin/products/:id", requireAdmin, (req, res) => {
+app.delete("/api/admin/products/:id", requireAdmin, adminMutationRateLimiter, (req, res) => {
   db.run(
     `
     UPDATE products
@@ -1117,7 +1209,7 @@ app.delete("/api/admin/products/:id", requireAdmin, (req, res) => {
   )
 })
 
-app.post("/api/admin/products/sort", requireAdmin, (req, res) => {
+app.post("/api/admin/products/sort", requireAdmin, adminMutationRateLimiter, (req, res) => {
   const { items } = req.body
 
   if (!Array.isArray(items)) {
@@ -1185,7 +1277,7 @@ app.get("/api/admin/purchases", requireAdmin, (req, res) => {
   )
 })
 
-app.patch("/api/admin/purchases/:id/status", requireAdmin, (req, res) => {
+app.patch("/api/admin/purchases/:id/status", requireAdmin, adminMutationRateLimiter, (req, res) => {
   const id = req.params.id
   const status = String(req.body.status || "").trim()
   const allowedStatuses = ["Ожидает выдачи", "Выдано", "Отменено"]
@@ -1253,7 +1345,7 @@ app.get("/api/admin/top-products", requireAdmin, (req, res) => {
   )
 })
 
-app.post("/api/admin/balance/add", requireAdmin, (req, res) => {
+app.post("/api/admin/balance/add", requireAdmin, adminMutationRateLimiter, (req, res) => {
   const steamId = getAdminTargetSteamId(req)
   const amount = Math.floor(Number(req.body.amount || 0))
   const note = String(req.body.note || "").trim()
@@ -1328,7 +1420,7 @@ app.post("/api/admin/balance/add", requireAdmin, (req, res) => {
   })
 })
 
-app.post("/api/admin/balance/subtract", requireAdmin, (req, res) => {
+app.post("/api/admin/balance/subtract", requireAdmin, adminMutationRateLimiter, (req, res) => {
   const steamId = getAdminTargetSteamId(req)
   const amount = Math.floor(Number(req.body.amount || 0))
   const note = String(req.body.note || "").trim()
@@ -1368,7 +1460,7 @@ app.post("/api/admin/balance/subtract", requireAdmin, (req, res) => {
   })
 })
 
-app.post("/api/admin/balance/set", requireAdmin, (req, res) => {
+app.post("/api/admin/balance/set", requireAdmin, adminMutationRateLimiter, (req, res) => {
   const steamId = getAdminTargetSteamId(req)
   const rawAmount = Number(req.body.amount || 0)
   const amount = Math.max(Math.floor(rawAmount), 0)
@@ -1432,7 +1524,7 @@ app.get("/api/admin/promocodes", requireAdmin, (req, res) => {
   )
 })
 
-app.post("/api/admin/promocodes", requireAdmin, (req, res) => {
+app.post("/api/admin/promocodes", requireAdmin, adminMutationRateLimiter, (req, res) => {
   const code = String(req.body.code || "").trim().toUpperCase()
   const amount = Math.floor(Number(req.body.amount || 0))
   const maxUses = Math.max(Math.floor(Number(req.body.maxUses || 1)), 1)
@@ -1463,7 +1555,7 @@ app.post("/api/admin/promocodes", requireAdmin, (req, res) => {
   )
 })
 
-app.patch("/api/admin/promocodes/:id", requireAdmin, (req, res) => {
+app.patch("/api/admin/promocodes/:id", requireAdmin, adminMutationRateLimiter, (req, res) => {
   const isActive = req.body.isActive ? 1 : 0
 
   db.run(
@@ -1477,8 +1569,8 @@ app.patch("/api/admin/promocodes/:id", requireAdmin, (req, res) => {
   )
 })
 
-app.get("/api/purchases/:steamId", (req, res) => {
-  const steamId = getRequestSteamId(req) || req.params.steamId
+app.get("/api/purchases/:steamId", requireOwnSteamIdOrAdmin, (req, res) => {
+  const steamId = String(req.params.steamId || "").trim()
 
   if (!steamId) {
     return res.status(401).json({ error: "Войдите через Steam" })
@@ -1502,17 +1594,8 @@ app.get("/api/purchases/:steamId", (req, res) => {
   )
 })
 
-app.get("/api/payments/:steamId", (req, res) => {
+app.get("/api/payments/:steamId", requireOwnSteamIdOrAdmin, (req, res) => {
   const requestedSteamId = String(req.params.steamId || "")
-  const currentSteamId = getRequestSteamId(req)
-
-  if (!currentSteamId) {
-    return res.status(401).json({ error: "Войдите через Steam" })
-  }
-
-  if (requestedSteamId !== currentSteamId && !isAdminSteamId(currentSteamId)) {
-    return res.status(403).json({ error: "Можно смотреть только свои операции" })
-  }
 
   db.all(
     `
@@ -1533,7 +1616,7 @@ app.get("/api/payments/:steamId", (req, res) => {
   )
 })
 
-app.post("/api/transfer", (req, res) => {
+app.post("/api/transfer", transferRateLimiter, (req, res) => {
   const senderSteamId = getRequestSteamId(req)
   const senderUser = getRequestUser(req)
   const recipientSteamId = String(req.body.recipientSteamId || req.body.toSteamId || "").trim()
@@ -1710,7 +1793,7 @@ app.post("/api/transfer", (req, res) => {
   })
 })
 
-app.post("/api/purchase", (req, res) => {
+app.post("/api/purchase", purchaseRateLimiter, (req, res) => {
   const { productName } = req.body
   const requestUser = getRequestUser(req)
   const currentSteamId = getRequestSteamId(req)
@@ -1821,7 +1904,7 @@ app.post("/api/purchase", (req, res) => {
   })
 })
 
-app.post("/api/purchase/cart", (req, res) => {
+app.post("/api/purchase/cart", purchaseRateLimiter, (req, res) => {
   const { items } = req.body
   const requestUser = getRequestUser(req)
   const currentSteamId = getRequestSteamId(req)
@@ -1982,7 +2065,7 @@ app.get("/api/roulette/drops/stream", (req, res) => {
   })
 })
 
-app.post("/api/roulette/spin", (req, res) => {
+app.post("/api/roulette/spin", purchaseRateLimiter, (req, res) => {
   const requestUser = getRequestUser(req)
   const steamId = getRequestSteamId(req)
   const username = requestUser?.displayName || requestUser?.username || "Игрок REDMOON"
@@ -2170,7 +2253,7 @@ app.post("/api/roulette/drops", (req, res) => {
   res.status(410).json({ error: "Выпадение рулетки создается только через оплату прокрутки" })
 })
 
-app.post("/api/deposit", (req, res) => {
+app.post("/api/deposit", paymentRateLimiter, (req, res) => {
   const steamId = getRequestSteamId(req)
   const requestUser = getRequestUser(req)
   const amount = Math.floor(toMoneyAmount(req.body.amount))
@@ -2376,6 +2459,10 @@ app.get("/api/freekassa/fail", (req, res) => {
   res.redirect(`${FRONTEND_URL}?payment=cancel`)
 })
 app.get("/api/test-payment/:id", (req, res) => {
+  if (!ENABLE_TEST_PAYMENTS) {
+    return res.status(404).send("Not found")
+  }
+
   const paymentId = req.params.id
 
   db.get(
@@ -2407,6 +2494,10 @@ app.get("/api/test-payment/:id", (req, res) => {
 })
 
 app.post("/api/test-payment/:id/pay", (req, res) => {
+  if (!ENABLE_TEST_PAYMENTS) {
+    return res.status(404).send("Not found")
+  }
+
   const paymentId = req.params.id
 
   db.get(
@@ -2466,6 +2557,10 @@ app.post("/api/test-payment/:id/pay", (req, res) => {
 })
 
 app.get("/api/test-payment/:id/cancel", (req, res) => {
+  if (!ENABLE_TEST_PAYMENTS) {
+    return res.status(404).send("Not found")
+  }
+
   const paymentId = req.params.id
 
   db.run(

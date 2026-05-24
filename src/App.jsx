@@ -1,20 +1,20 @@
 import { useState, useEffect, useRef } from "react"
 import "./App.css"
-import gunterImg from "./images/gunter.png"
-import bannerImg from "./images/banner.png"
-import flagImage from "./images/Flag.png"
-import vipImage from "./images/vip.png"
-import lilaxeImg from "./images/lilaxe.png";
-import kuvaldaImg from "./images/kuvalda.png";
-import kirkaImg from "./images/kirka.png";
-import buildingbackpackImg from "./images/buildingbackpack.png";
-import bochkaImg from "./images/bochka.png";
-import gvozdiImg from "./images/gvozdi.png";
-import metallImg from "./images/metall.png";
-import lopataImg from "./images/lopata.png";
-import provolokaImg from "./images/provoloka.png";
-import ploskiImg from "./images/ploski.png";
-import verevkaImg from "./images/verevka.png";
+import gunterImg from "./images/gunter.webp"
+import bannerImg from "./images/banner.webp"
+import flagImage from "./images/Flag.webp"
+import vipImage from "./images/vip.webp"
+import lilaxeImg from "./images/lilaxe.webp";
+import kuvaldaImg from "./images/kuvalda.webp";
+import kirkaImg from "./images/kirka.webp";
+import buildingbackpackImg from "./images/buildingbackpack.webp";
+import bochkaImg from "./images/bochka.webp";
+import gvozdiImg from "./images/gvozdi.webp";
+import metallImg from "./images/metall.webp";
+import lopataImg from "./images/lopata.webp";
+import provolokaImg from "./images/provoloka.webp";
+import ploskiImg from "./images/ploski.webp";
+import verevkaImg from "./images/verevka.webp";
 
 const getNumericPrice = (value) => Number(String(value ?? "").replace(/[^\d.-]/g, "")) || 0
 const formatRubPrice = (value) => `${getNumericPrice(value)} RUB`
@@ -164,6 +164,20 @@ const DEPOSIT_BONUS_TIERS = [
   { min: 2000, percent: 20 },
   { min: 1000, percent: 15 },
   { min: 500, percent: 10 },
+]
+const SHOP_INFO_CARDS = [
+  {
+    title: "Как получить товар",
+    text: "После оплаты нажмите B в игре, выберите купленный товар и нажмите «Получить». Обычные предметы появятся под ногами. Для транспорта встаньте на открытую местность: машина появится там, куда смотрит курсор."
+  },
+  {
+    title: "Сколько ждать выдачи",
+    text: "Выдача товара практически моментальная. Если предмет не появился или возникла ошибка, создайте тикет в Discord, и администрация поможет проверить покупку."
+  },
+  {
+    title: "Куда писать в поддержку",
+    text: "На нашем Discord-сервере откройте раздел «АДМИНИСТРАЦИЯ» и создайте тикет. Через тикеты можно напрямую связаться с администрацией проекта и описать проблему."
+  }
 ]
 const LEGAL_PAGES = [
   {
@@ -2034,7 +2048,8 @@ backgroundAttachment: "fixed",
       "perspective(720px) rotateX(0deg) rotateY(0deg) translateY(0) scale(1)"
   }}
 >
-  REDMOON
+  <span className="redmoon-logo-full">REDMOON</span>
+  <span className="redmoon-logo-short">R</span>
 </h1>
 
         <nav
@@ -2083,6 +2098,7 @@ backgroundAttachment: "fixed",
 
 {user && (
   <button
+    className="header-balance-button"
     onClick={() => navigateToPage("deposit")}
     style={{
   display: "flex",
@@ -2131,6 +2147,7 @@ onMouseLeave={(e) => {
   </button>
 )}
 <div
+  className="header-cart-button"
   onClick={() => setCartOpen(true)}
   style={{
   display: "flex",
@@ -3097,6 +3114,7 @@ paddingTop: "120px"
 )}
 {page === "shop" && (
   <main
+    className="shop-page"
     style={{
       textAlign: "center",
       padding: "120px 40px 80px"
@@ -3104,6 +3122,7 @@ paddingTop: "120px"
   >
 
   <div
+  className="shop-hero-banner"
   style={{
     width: "100%",
     maxWidth: "1600px",
@@ -3212,8 +3231,23 @@ onMouseLeave={(e) => {
 ))}
 </div>
 </div>
+<section className="shop-info-section" aria-label="Информация о выдаче товаров и поддержке">
+  <div className="shop-info-heading">
+    <span>REDMOON HELP</span>
+    <h2>Получение товара и поддержка</h2>
+  </div>
+
+  <div className="shop-info-grid">
+    {SHOP_INFO_CARDS.map((card) => (
+      <article className="shop-info-card" key={card.title}>
+        <h3>{card.title}</h3>
+        <p>{card.text}</p>
+      </article>
+    ))}
+  </div>
+</section>
         <div style={{
-  marginTop: "100px",
+  marginTop: "64px",
   display: "flex",
   justifyContent: "center",
   gap: "30px",

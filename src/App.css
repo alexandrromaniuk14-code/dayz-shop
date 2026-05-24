@@ -450,6 +450,10 @@ padding: 28px;
   transform: perspective(720px) rotateX(0deg) rotateY(0deg) translateY(1px) scale(0.985);
 }
 
+.redmoon-logo-short {
+  display: none;
+}
+
 .login-button {
   height: 46px;
   padding: 0 18px;
@@ -941,6 +945,70 @@ align-self: center;
 .price-tag {
   margin-top: auto;
   margin-bottom: 14px;
+}
+
+.shop-info-section {
+  width: min(1180px, 100%);
+  margin: 48px auto 0;
+  text-align: left;
+}
+
+.shop-info-heading {
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+.shop-info-heading span {
+  display: block;
+  margin-bottom: 8px;
+  color: #ff5367;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+}
+
+.shop-info-heading h2 {
+  margin: 0;
+  color: white;
+  font-size: 32px;
+  line-height: 1.08;
+  text-shadow: 0 0 24px rgba(255, 59, 79, 0.22);
+}
+
+.shop-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.shop-info-card {
+  min-height: 188px;
+  padding: 22px;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(255, 59, 79, 0.14), transparent 52%),
+    rgba(12,12,14,0.82);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 0 38px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.shop-info-card h3 {
+  margin: 0 0 12px;
+  color: white;
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.shop-info-card p {
+  margin: 0;
+  color: rgba(255,255,255,0.64);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.58;
 }
 
 .roulette-page {
@@ -3003,6 +3071,195 @@ align-self: center;
 }
 
 @media (max-width: 760px) {
+  .site-header {
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px !important;
+    flex-wrap: wrap;
+    align-items: flex-start !important;
+    gap: 8px;
+  }
+
+  .site-header.compact {
+    box-shadow:
+      0 10px 28px rgba(0,0,0,0.38),
+      0 0 18px rgba(255,59,79,0.1);
+  }
+
+  .site-header-nav,
+  .site-header.compact .site-header-nav {
+    flex: 1 1 calc(100% - 70px);
+    min-width: 0;
+    max-width: calc(100% - 70px);
+    justify-content: flex-end;
+    gap: 8px !important;
+    flex-wrap: wrap;
+    transform: none !important;
+  }
+
+  .redmoon-logo-button,
+  .site-header.compact .redmoon-logo-button {
+    flex: 0 0 54px;
+    width: 54px;
+    height: 54px;
+    min-width: 54px;
+    padding: 0 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    font-size: 32px;
+    letter-spacing: 0;
+  }
+
+  .redmoon-logo-full {
+    display: none;
+  }
+
+  .redmoon-logo-short {
+    display: inline;
+  }
+
+  .discord-button,
+  .vk-button,
+  .tg-button {
+    order: 2;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .discord-button svg,
+  .tg-button svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .header-balance-button,
+  .header-cart-button,
+  .login-button,
+  .profile-avatar-button,
+  .admin-header-button {
+    order: 1;
+  }
+
+  .header-balance-button {
+    flex: 1 1 116px;
+    min-width: 0 !important;
+    max-width: 142px;
+    height: 40px !important;
+    padding: 0 10px !important;
+    border-radius: 12px !important;
+    font-size: 13px !important;
+    white-space: nowrap;
+  }
+
+  .header-cart-button {
+    flex: 0 0 58px;
+    min-width: 58px !important;
+    height: 40px !important;
+    padding: 0 10px !important;
+    border-radius: 12px !important;
+    font-size: 14px !important;
+    white-space: nowrap;
+  }
+
+  .login-button {
+    flex: 1 1 148px;
+    max-width: 190px;
+    height: 40px;
+    padding: 0 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .profile-avatar-button {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+  }
+
+  .profile-avatar-button img {
+    width: 32px;
+    height: 32px;
+  }
+
+  .admin-header-button {
+    height: 40px;
+    padding: 0 12px;
+    border-radius: 12px;
+    font-size: 13px;
+  }
+
+  .shop-page {
+    padding: 142px 12px 58px !important;
+  }
+
+  .shop-hero-banner {
+    height: clamp(330px, 94vw, 480px) !important;
+    border-radius: 18px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .shop-page input[type="text"] {
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .shop-page .product-card {
+    width: min(100%, 336px);
+    min-height: 0;
+    padding: 20px;
+    border-radius: 18px;
+  }
+
+  .shop-page .product-image {
+    max-width: 100% !important;
+  }
+
+  .shop-info-section {
+    margin-top: 34px;
+  }
+
+  .shop-info-heading h2 {
+    font-size: 26px;
+  }
+
+  .shop-info-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .shop-info-card {
+    min-height: 0;
+    padding: 18px;
+    border-radius: 16px;
+  }
+
+  .shop-info-card h3 {
+    font-size: 18px;
+  }
+
+  .shop-info-card p {
+    font-size: 14px;
+  }
+
+  .profile-page,
+  .deposit-page,
+  .admin-page,
+  .roulette-page,
+  .legal-page {
+    padding-top: 142px !important;
+  }
+
+  .toast-notification {
+    top: 126px;
+  }
+
+  .freekassa-static-verify-banner {
+    display: none;
+  }
+
   .site-footer__inner {
     width: min(100% - 28px, 1180px);
     padding: 30px 0 24px;
