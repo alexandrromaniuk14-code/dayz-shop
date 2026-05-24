@@ -557,6 +557,7 @@ const [adminLogs, setAdminLogs] = useState([])
 const [adminPromocodes, setAdminPromocodes] = useState([])
 const [adminTopProducts, setAdminTopProducts] = useState([])
 const [adminSummary, setAdminSummary] = useState(null)
+const [adminPaymentsTotalForm, setAdminPaymentsTotalForm] = useState("")
 const [adminTab, setAdminTab] = useState("products")
 const [adminSearch, setAdminSearch] = useState("")
 const [adminPurchaseStatusFilter, setAdminPurchaseStatusFilter] = useState("all")
@@ -1764,7 +1765,10 @@ const loadAdminData = () => {
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/top-products").then((res) => res.json())
   ])
     .then(([summary, productsList, usersList, purchasesList, paymentsList, logsList, promocodesList, topProductsList]) => {
-      if (!summary.error) setAdminSummary(summary)
+      if (!summary.error) {
+        setAdminSummary(summary)
+        setAdminPaymentsTotalForm(String(summary.paymentsTotal ?? 0))
+      }
       if (Array.isArray(productsList)) setAdminProducts(productsList)
       if (Array.isArray(usersList)) setAdminUsers(usersList)
       if (Array.isArray(purchasesList)) setAdminPurchases(purchasesList)
@@ -1776,6 +1780,75 @@ const loadAdminData = () => {
     .catch((err) => {
       console.log("ADMIN LOAD ERROR:", err)
       showProfileNotice("Не удалось загрузить админ-панель", "error")
+    })
+}
+
+const handleAdminPaymentsTotalSubmit = (event) => {
+  event.preventDefault()
+
+  if (!isAdmin) {
+    showProfileNotice("Нет доступа к админ-панели", "error")
+    return
+  }
+
+  const amount = Math.floor(Number(adminPaymentsTotalForm))
+
+  if (!adminPaymentsTotalForm || !Number.isFinite(amount) || amount < 0) {
+    showProfileNotice("Укажи сумму пополнений в рублях", "error")
+    return
+  }
+
+  authorizedFetch(`${API_BASE_URL}/api/admin/summary/payments-total`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ amount })
+  })
+    .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showProfileNotice(data.error || "Не удалось обновить показатель", "error")
+        return
+      }
+
+      setAdminSummary((currentSummary) => currentSummary
+        ? {
+            ...currentSummary,
+            paymentsTotal: data.paymentsTotal,
+            paymentsTotalMode: data.paymentsTotalMode
+          }
+        : currentSummary
+      )
+      setAdminPaymentsTotalForm(String(data.paymentsTotal ?? amount))
+      showProfileNotice("Показатель пополнений обновлен")
+      loadAdminData()
+    })
+    .catch((err) => {
+      console.log("ADMIN PAYMENTS TOTAL ERROR:", err)
+      showProfileNotice("Ошибка при обновлении показателя", "error")
+    })
+}
+
+const resetAdminPaymentsTotal = () => {
+  if (!isAdmin) return
+
+  authorizedFetch(`${API_BASE_URL}/api/admin/summary/payments-total`, {
+    method: "DELETE"
+  })
+    .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showProfileNotice(data.error || "Не удалось вернуть авторасчет", "error")
+        return
+      }
+
+      showProfileNotice("Пополнено снова считается автоматически")
+      loadAdminData()
+    })
+    .catch((err) => {
+      console.log("ADMIN PAYMENTS TOTAL RESET ERROR:", err)
+      showProfileNotice("Ошибка при сбросе показателя", "error")
     })
 }
 
@@ -2458,6 +2531,26 @@ paddingTop: "120px"
           <div>
             <span>Пополнено</span>
             <strong>{formatRubPrice(adminSummary?.paymentsTotal ?? 0)}</strong>
+            <em>
+              {adminSummary?.paymentsTotalMode === "manual"
+                ? `Задано вручную · авто ${formatRubPrice(adminSummary?.paymentsActualTotal ?? 0)}`
+                : "Авто: только реальные FreeKassa"}
+            </em>
+            <form className="admin-stat-edit-form" onSubmit={handleAdminPaymentsTotalSubmit}>
+              <input
+                type="number"
+                min="0"
+                value={adminPaymentsTotalForm}
+                onChange={(e) => setAdminPaymentsTotalForm(e.target.value)}
+                placeholder="Сумма"
+              />
+              <button type="submit">Сохранить</button>
+              {adminSummary?.paymentsTotalMode === "manual" && (
+                <button type="button" onClick={resetAdminPaymentsTotal}>
+                  Авто
+                </button>
+              )}
+            </form>
           </div>
         </div>
 

@@ -1167,14 +1167,76 @@ app.get("/api/admin/summary", requireAdmin, (req, res) => {
           if (err) return res.status(500).json({ error: err.message })
           summary.products = row.count
 
-          db.get("SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE status = 'paid' AND amount > 0", (err, row) => {
-            if (err) return res.status(500).json({ error: err.message })
-            summary.paymentsTotal = row.total
-            res.json(summary)
-          })
+          db.get(
+            `
+            SELECT COALESCE(SUM(CASE
+              WHEN providerAmount IS NOT NULL AND providerAmount > 0 THEN providerAmount
+              ELSE amount
+            END), 0) AS total
+            FROM payments
+            WHERE status = 'paid'
+              AND amount > 0
+              AND (type = 'freekassa' OR provider = 'freekassa')
+            `,
+            (err, row) => {
+              if (err) return res.status(500).json({ error: err.message })
+              summary.paymentsActualTotal = row.total
+
+              db.get("SELECT value FROM app_settings WHERE key = ?", ["admin_payments_total"], (err, settingsRow) => {
+                if (err) return res.status(500).json({ error: err.message })
+
+                const manualTotal = settingsRow ? Number(settingsRow.value) : null
+
+                summary.paymentsTotal = Number.isFinite(manualTotal) ? manualTotal : summary.paymentsActualTotal
+                summary.paymentsTotalMode = Number.isFinite(manualTotal) ? "manual" : "auto"
+                res.json(summary)
+              })
+            }
+          )
         })
       })
     })
+  })
+})
+
+app.patch("/api/admin/summary/payments-total", requireAdmin, adminMutationRateLimiter, (req, res) => {
+  const rawAmount = Number(req.body.amount)
+  const amount = Math.max(Math.floor(rawAmount), 0)
+  const updatedAt = new Date().toISOString()
+
+  if (!Number.isFinite(rawAmount) || rawAmount < 0) {
+    return res.status(400).json({ error: "Укажи сумму в рублях" })
+  }
+
+  db.run(
+    `
+    INSERT INTO app_settings (key, value, updatedAt)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updatedAt = excluded.updatedAt
+    `,
+    ["admin_payments_total", String(amount), updatedAt],
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message })
+
+      writeAdminLog(req, "payments_total_set", "admin_summary", { amount })
+      res.json({
+        success: true,
+        paymentsTotal: amount,
+        paymentsTotalMode: "manual",
+        updatedAt
+      })
+    }
+  )
+})
+
+app.delete("/api/admin/summary/payments-total", requireAdmin, adminMutationRateLimiter, (req, res) => {
+  db.run("DELETE FROM app_settings WHERE key = ?", ["admin_payments_total"], (err) => {
+    if (err) return res.status(500).json({ error: err.message })
+
+    writeAdminLog(req, "payments_total_reset", "admin_summary")
+    res.json({ success: true, paymentsTotalMode: "auto" })
   })
 })
 

@@ -3216,6 +3216,47 @@ align-self: center;
   font-size: 28px;
 }
 
+.admin-stats-grid em {
+  display: block;
+  margin-top: 6px;
+  color: rgba(255,255,255,0.5);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.admin-stat-edit-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.admin-stat-edit-form input {
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.055);
+  color: white;
+  font-weight: 900;
+  outline: none;
+}
+
+.admin-stat-edit-form button {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,59,79,0.34);
+  border-radius: 10px;
+  background: rgba(255,59,79,0.14);
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .admin-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -3563,6 +3604,10 @@ align-self: center;
 
   .admin-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-stat-edit-form {
+    grid-template-columns: 1fr;
   }
 
   .admin-product-row {

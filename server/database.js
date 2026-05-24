@@ -132,6 +132,14 @@ db.serialize(() => {
     )
   `)
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updatedAt TEXT
+    )
+  `)
+
   const defaultPromocodes = [
     ["REDMOONSTART", 100],
     ["REDMOONSUMMER", 100],
