@@ -331,6 +331,7 @@ const LEGAL_PAGES = [
 const LEGAL_PAGE_BY_ID = Object.fromEntries(LEGAL_PAGES.map((page) => [page.id, page]))
 const LEGAL_PAGE_BY_PATH = Object.fromEntries(LEGAL_PAGES.map((page) => [page.path, page]))
 const LEGAL_PATH_BY_PAGE_ID = Object.fromEntries(LEGAL_PAGES.map((page) => [page.id, page.path]))
+const HELP_PAGE_PATH = "/help"
 const FOOTER_LEGAL_LINKS = [
   { id: "privacy", label: "Политика конфиденциальности" },
   { id: "terms", label: "Пользовательское соглашение" },
@@ -350,6 +351,8 @@ const getStoredAuthToken = () => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
 
 const getPageFromCurrentPath = () => {
   if (typeof window === "undefined") return "shop"
+
+  if (window.location.pathname === HELP_PAGE_PATH) return "help"
 
   return LEGAL_PAGE_BY_PATH[window.location.pathname]?.id || "shop"
 }
@@ -584,7 +587,7 @@ const spinStartTimerRef = useRef(null)
 const spinResultTimerRef = useRef(null)
 
 const navigateToPage = (nextPage) => {
-  const nextPath = LEGAL_PATH_BY_PAGE_ID[nextPage] || "/"
+  const nextPath = nextPage === "help" ? HELP_PAGE_PATH : LEGAL_PATH_BY_PAGE_ID[nextPage] || "/"
 
   if (window.location.pathname !== nextPath || window.location.search || window.location.hash) {
     window.history.pushState({}, "", nextPath)
@@ -2893,6 +2896,42 @@ paddingTop: "120px"
           onNavigateHome={() => navigateToPage("shop")}
         />
       )}
+      {page === "help" && (
+        <main className="support-info-page">
+          <section className="support-info-shell">
+            <button
+              className="legal-page__back"
+              onClick={() => navigateToPage("shop")}
+            >
+              Назад в магазин
+            </button>
+
+            <div className="shop-info-heading support-info-heading">
+              <span>REDMOON HELP</span>
+              <h2>Получение товара и поддержка</h2>
+              <p>Коротко о том, как забрать покупку после оплаты и куда обращаться, если что-то пошло не так.</p>
+            </div>
+
+            <div className="shop-info-grid support-info-grid">
+              {SHOP_INFO_CARDS.map((card) => (
+                <article className="shop-info-card" key={card.title}>
+                  <h3>{card.title}</h3>
+                  <p>{card.text}</p>
+                </article>
+              ))}
+            </div>
+
+            <a
+              className="support-discord-link"
+              href="https://discord.gg/yDJvVvvkGu"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Открыть Discord
+            </a>
+          </section>
+        </main>
+      )}
       {page === "profile" && (
   <main className="profile-page">
     <section className="profile-shell">
@@ -3170,6 +3209,13 @@ onMouseLeave={(e) => {
     marginTop: "70px"
   }}
 >
+  <button
+    className="shop-help-link-button"
+    onClick={() => navigateToPage("help")}
+  >
+    Как получить товар и написать в поддержку
+  </button>
+
   <input
   type="text"
   placeholder="Поиск товара..."
@@ -3231,21 +3277,6 @@ onMouseLeave={(e) => {
 ))}
 </div>
 </div>
-<section className="shop-info-section" aria-label="Информация о выдаче товаров и поддержке">
-  <div className="shop-info-heading">
-    <span>REDMOON HELP</span>
-    <h2>Получение товара и поддержка</h2>
-  </div>
-
-  <div className="shop-info-grid">
-    {SHOP_INFO_CARDS.map((card) => (
-      <article className="shop-info-card" key={card.title}>
-        <h3>{card.title}</h3>
-        <p>{card.text}</p>
-      </article>
-    ))}
-  </div>
-</section>
         <div style={{
   marginTop: "64px",
   display: "flex",
