@@ -164,8 +164,254 @@ const DEPOSIT_BONUS_TIERS = [
   { min: 1000, percent: 15 },
   { min: 500, percent: 10 },
 ]
+const LEGAL_PAGES = [
+  {
+    id: "privacy",
+    path: "/privacy",
+    title: "Политика конфиденциальности",
+    eyebrow: "REDMOON DAYZ",
+    intro: "Настоящая политика описывает, какие данные обрабатывает REDMOON DayZ при использовании магазина, авторизации через Steam и оплате цифровых игровых услуг.",
+    sections: [
+      {
+        title: "1. Какие данные мы обрабатываем",
+        paragraphs: [
+          "При авторизации через Steam магазин получает SteamID, отображаемое имя и аватар пользователя. Эти данные нужны для привязки баланса, покупок и истории операций к конкретному игровому аккаунту.",
+          "При оплате могут обрабатываться сумма пополнения, статус платежа, идентификатор заказа, email, технические данные платежной системы и история начислений."
+        ]
+      },
+      {
+        title: "2. Цели обработки",
+        paragraphs: [
+          "Данные используются для работы личного кабинета, пополнения баланса, выдачи цифровых игровых услуг, защиты от ошибок и злоупотреблений, а также для обработки обращений в поддержку.",
+          "REDMOON DayZ не продает персональные данные пользователей и не передает их третьим лицам, кроме случаев, необходимых для проведения платежей, хостинга сайта и исполнения требований закона."
+        ]
+      },
+      {
+        title: "3. Хранение и безопасность",
+        paragraphs: [
+          "Мы принимаем разумные технические меры для защиты учетных и платежных данных. Доступ к административным функциям ограничен владельцем проекта.",
+          "Пользователь может обратиться в поддержку через Discord ticket-систему для уточнения данных, связанных с его SteamID и покупками."
+        ]
+      }
+    ]
+  },
+  {
+    id: "terms",
+    path: "/terms",
+    title: "Пользовательское соглашение",
+    eyebrow: "УСЛОВИЯ ИСПОЛЬЗОВАНИЯ",
+    intro: "Используя сайт REDMOON DayZ, пользователь принимает условия покупки цифровых игровых услуг для сервера DayZ.",
+    sections: [
+      {
+        title: "1. Общие положения",
+        paragraphs: [
+          "REDMOON DayZ является независимым проектом и не является официальным проектом Bohemia Interactive или DayZ.",
+          "Все товары на сайте являются цифровыми игровыми услугами, предназначенными только для использования на сервере REDMOON DayZ."
+        ]
+      },
+      {
+        title: "2. Аккаунт и баланс",
+        paragraphs: [
+          "Для использования магазина требуется авторизация через Steam. Пользователь отвечает за правильность выбранного Steam аккаунта перед оплатой и покупкой товара.",
+          "Баланс отображается в личном кабинете и используется для приобретения услуг на сайте. История операций сохраняется для проверки начислений и обращений в поддержку."
+        ]
+      },
+      {
+        title: "3. Ограничения",
+        paragraphs: [
+          "Запрещены попытки обхода оплаты, вмешательство в работу сайта, злоупотребление ошибками, подмена платежных данных и действия, нарушающие правила сервера.",
+          "Администрация может отказать в обслуживании при нарушении правил проекта, попытках мошенничества или использовании чужого аккаунта."
+        ]
+      }
+    ]
+  },
+  {
+    id: "paymentRules",
+    path: "/payment-rules",
+    title: "Правила оплаты",
+    eyebrow: "ОПЛАТА И НАЧИСЛЕНИЯ",
+    intro: "Оплата на сайте используется для пополнения баланса и дальнейшей покупки цифровых игровых услуг REDMOON DayZ.",
+    sections: [
+      {
+        title: "1. Порядок оплаты",
+        paragraphs: [
+          "Пользователь выбирает сумму пополнения, указывает email и переходит к оплате через подключенную платежную систему.",
+          "После успешного подтверждения платежа баланс начисляется автоматически. Если зачисление не произошло, необходимо создать обращение в Discord ticket-системе."
+        ]
+      },
+      {
+        title: "2. Валюта и бонусы",
+        paragraphs: [
+          "Цены и баланс на сайте отображаются в RUB. Бонусы пополнения применяются автоматически согласно условиям, указанным в форме пополнения.",
+          "Платеж считается завершенным только после получения подтверждения от платежной системы."
+        ]
+      },
+      {
+        title: "3. Ответственность пользователя",
+        paragraphs: [
+          "Перед оплатой пользователь обязан проверить Steam аккаунт, сумму пополнения и корректность email.",
+          "Покупки и начисления привязываются к SteamID, под которым пользователь авторизован на сайте."
+        ]
+      }
+    ]
+  },
+  {
+    id: "refund",
+    path: "/refund",
+    title: "Возврат средств",
+    eyebrow: "ПОЛИТИКА ВОЗВРАТА",
+    intro: "Возврат средств по цифровым игровым услугам REDMOON DayZ возможен только в ограниченных случаях, связанных с технической ошибкой или невыдачей услуги.",
+    sections: [
+      {
+        title: "1. Когда возможен возврат",
+        paragraphs: [
+          "Возврат рассматривается, если оплата прошла успешно, но баланс не был начислен, товар не был записан в покупки или услуга не была выдана по технической причине.",
+          "Для проверки необходимо обратиться в Discord ticket-систему и указать SteamID, сумму, дату платежа, номер заказа или иной идентификатор платежа."
+        ]
+      },
+      {
+        title: "2. Когда возврат не производится",
+        paragraphs: [
+          "Возврат не производится, если цифровая услуга была успешно выдана, пользователь передумал после покупки, указал неверный аккаунт, нарушил правила сервера или потерял доступ к игре по причинам, не связанным с сайтом.",
+          "Начатая или полученная цифровая услуга считается оказанной, если она отражена в истории покупок и доступна для выдачи на сервере."
+        ]
+      },
+      {
+        title: "3. Срок рассмотрения",
+        paragraphs: [
+          "Обращения по возврату рассматриваются вручную через поддержку. Срок зависит от полноты предоставленных данных и ответа платежной системы.",
+          "Администрация оставляет за собой право запросить дополнительные сведения для подтверждения платежа и принадлежности Steam аккаунта."
+        ]
+      }
+    ]
+  },
+  {
+    id: "contacts",
+    path: "/contacts",
+    title: "Контакты",
+    eyebrow: "ПОДДЕРЖКА REDMOON",
+    intro: "По вопросам оплаты, выдачи товаров, возврата средств и работы сайта обращайтесь в поддержку REDMOON DayZ.",
+    sections: [
+      {
+        title: "Основной способ связи",
+        paragraphs: [
+          "Поддержка осуществляется через Discord ticket-систему. Создайте ticket и укажите SteamID, описание проблемы, дату операции и номер платежа, если вопрос связан с оплатой.",
+          "Для новостей и быстрых уведомлений также может использоваться Telegram-канал проекта."
+        ],
+        links: [
+          { label: "Открыть Discord", href: "https://discord.gg/yDJvVvvkGu" },
+          { label: "Открыть Telegram", href: "https://t.me/+sB-7z34FgUVlZDgy" }
+        ]
+      },
+      {
+        title: "Информация о проекте",
+        paragraphs: [
+          "Сайт проекта: redmoon-dayz.ru. Магазин предназначен для покупки цифровых игровых услуг на сервере REDMOON DayZ.",
+          "REDMOON DayZ не является официальным проектом Bohemia Interactive или DayZ."
+        ]
+      }
+    ]
+  }
+]
+const LEGAL_PAGE_BY_ID = Object.fromEntries(LEGAL_PAGES.map((page) => [page.id, page]))
+const LEGAL_PAGE_BY_PATH = Object.fromEntries(LEGAL_PAGES.map((page) => [page.path, page]))
+const LEGAL_PATH_BY_PAGE_ID = Object.fromEntries(LEGAL_PAGES.map((page) => [page.id, page.path]))
+const FOOTER_LEGAL_LINKS = [
+  { id: "privacy", label: "Политика конфиденциальности" },
+  { id: "terms", label: "Пользовательское соглашение" },
+  { id: "paymentRules", label: "Правила оплаты" },
+  { id: "refund", label: "Возврат средств" },
+  { id: "contacts", label: "Контакты" }
+]
+const FOOTER_NOTES = [
+  "REDMOON DayZ не является официальным проектом Bohemia Interactive или DayZ.",
+  "Все товары являются цифровыми игровыми услугами для сервера DayZ.",
+  "Выдача товаров происходит автоматически после успешной оплаты.",
+  "Возврат средств возможен только при технической ошибке или невыдаче услуги.",
+  "Поддержка осуществляется через Discord ticket-систему."
+]
 
 const getStoredAuthToken = () => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+
+const getPageFromCurrentPath = () => {
+  if (typeof window === "undefined") return "shop"
+
+  return LEGAL_PAGE_BY_PATH[window.location.pathname]?.id || "shop"
+}
+
+const SiteFooter = ({ onNavigate }) => (
+  <footer className="site-footer">
+    <div className="site-footer__glow" />
+    <div className="site-footer__inner">
+      <div className="site-footer__brand">
+        <strong>REDMOON</strong>
+        <span>DayZ digital services</span>
+      </div>
+
+      <nav className="site-footer__links" aria-label="Юридические страницы">
+        {FOOTER_LEGAL_LINKS.map((link) => (
+          <a
+            key={link.id}
+            href={LEGAL_PATH_BY_PAGE_ID[link.id]}
+            onClick={(event) => {
+              event.preventDefault()
+              onNavigate(link.id)
+            }}
+          >
+            {link.label}
+          </a>
+        ))}
+      </nav>
+
+      <div className="site-footer__notes">
+        {FOOTER_NOTES.map((note) => (
+          <p key={note}>{note}</p>
+        ))}
+      </div>
+
+      <div className="site-footer__bottom">
+        <span>© 2026 REDMOON DayZ</span>
+        <span>redmoon-dayz.ru</span>
+      </div>
+    </div>
+  </footer>
+)
+
+const LegalPage = ({ pageData, onNavigateHome }) => (
+  <main className="legal-page">
+    <section className="legal-page__shell">
+      <button className="legal-page__back" onClick={onNavigateHome}>
+        Вернуться в магазин
+      </button>
+
+      <div className="legal-page__heading">
+        <span>{pageData.eyebrow}</span>
+        <h2>{pageData.title}</h2>
+        <p>{pageData.intro}</p>
+      </div>
+
+      <div className="legal-page__content">
+        {pageData.sections.map((section) => (
+          <section className="legal-page__section" key={section.title}>
+            <h3>{section.title}</h3>
+            {section.paragraphs.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
+            {section.links && (
+              <div className="legal-page__actions">
+                {section.links.map((link) => (
+                  <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer">
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            )}
+          </section>
+        ))}
+      </div>
+    </section>
+  </main>
+)
 
 const getDepositBonus = (amount) => {
   const safeAmount = Math.floor(Number(amount || 0))
@@ -249,7 +495,7 @@ function App() {
   const [user, setUser] = useState(null)
   const [balance, setBalance] = useState(0) 
   const [paymentSuccess, setPaymentSuccess] = useState(false)
-  const [page, setPage] = useState("shop")
+  const [page, setPage] = useState(getPageFromCurrentPath)
   const [depositAmount, setDepositAmount] = useState("")
 const [depositEmail, setDepositEmail] = useState("")
 const [isDepositSubmitting, setIsDepositSubmitting] = useState(false)
@@ -313,6 +559,19 @@ const [isAdminImageDragging, setIsAdminImageDragging] = useState(false)
 const rouletteViewportRef = useRef(null)
 const spinStartTimerRef = useRef(null)
 const spinResultTimerRef = useRef(null)
+
+const navigateToPage = (nextPage) => {
+  const nextPath = LEGAL_PATH_BY_PAGE_ID[nextPage] || "/"
+
+  if (window.location.pathname !== nextPath || window.location.search || window.location.hash) {
+    window.history.pushState({}, "", nextPath)
+  }
+
+  setSelectedProduct(null)
+  setCartOpen(false)
+  setPage(nextPage)
+  window.scrollTo({ top: 0, behavior: "smooth" })
+}
 
 const getRouletteProductImage = (item) => {
   const productName = item?.name || item?.productName
@@ -455,7 +714,7 @@ const spinRoulette = () => {
   if (balance < ROULETTE_PRICE) {
     showProfileNotice("Недостаточно средств для рулетки", "error")
     setDepositAmount(ROULETTE_PRICE)
-    setPage("deposit")
+    navigateToPage("deposit")
     window.scrollTo({ top: 0, behavior: "smooth" })
     return
   }
@@ -481,7 +740,7 @@ const spinRoulette = () => {
         if ((data.error || "").includes("Недостаточно")) {
           setBalance(data.balance ?? balance)
           setDepositAmount(ROULETTE_PRICE)
-          setPage("deposit")
+          navigateToPage("deposit")
           window.scrollTo({ top: 0, behavior: "smooth" })
         }
 
@@ -537,6 +796,21 @@ const spinRoulette = () => {
       setIsRouletteOpening(false)
     })
 }
+
+useEffect(() => {
+  const handleRouteChange = () => {
+    setSelectedProduct(null)
+    setCartOpen(false)
+    setPage(getPageFromCurrentPath())
+    window.scrollTo({ top: 0 })
+  }
+
+  window.addEventListener("popstate", handleRouteChange)
+
+  return () => {
+    window.removeEventListener("popstate", handleRouteChange)
+  }
+}, [])
 
 useEffect(() => {
   return () => {
@@ -1075,7 +1349,7 @@ const handleProductPurchase = (product) => {
         if ((data.error || "").includes("Недостаточно средств")) {
           setDepositAmount(product.priceValue)
           setSelectedProduct(null)
-          setPage("deposit")
+          navigateToPage("deposit")
         }
 
         return
@@ -1516,13 +1790,15 @@ const toggleAdminPromocode = (promo) => {
 
 const openProductFromCard = (product) => {
   if (product.type === "roulette") {
-    setPage("roulette")
+    navigateToPage("roulette")
     window.scrollTo({ top: 0, behavior: "smooth" })
     return
   }
 
   setSelectedProduct(product)
 }
+
+const currentLegalPage = LEGAL_PAGE_BY_ID[page]
 
 useEffect(() => {
   if (page === "admin") {
@@ -1569,7 +1845,7 @@ backgroundAttachment: "fixed",
       >
         <h1
   className="redmoon-logo-button"
-  onClick={() => setPage("shop")}
+  onClick={() => navigateToPage("shop")}
   onMouseMove={(e) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width - 0.5) * 2
@@ -1636,7 +1912,7 @@ backgroundAttachment: "fixed",
 
 {user && (
   <button
-    onClick={() => setPage("deposit")}
+    onClick={() => navigateToPage("deposit")}
     style={{
   display: "flex",
   alignItems: "center",
@@ -1733,7 +2009,7 @@ onMouseLeave={(e) => {
 {isAdmin && (
   <button
     className="admin-header-button"
-    onClick={() => setPage("admin")}
+    onClick={() => navigateToPage("admin")}
   >
     Админ
   </button>
@@ -1797,7 +2073,7 @@ paddingTop: "120px"
       <button
         onClick={() => {
           setPaymentSuccess(false)
-          setPage("shop")
+          navigateToPage("shop")
         }}
         style={{
           width: "100%",
@@ -1819,7 +2095,7 @@ paddingTop: "120px"
 {user ? (
   <button
     className="profile-avatar-button"
-    onClick={() => setPage("profile")}
+    onClick={() => navigateToPage("profile")}
     title={user.displayName}
   >
     <img
@@ -2403,6 +2679,12 @@ paddingTop: "120px"
     )}
   </main>
 )}
+      {currentLegalPage && (
+        <LegalPage
+          pageData={currentLegalPage}
+          onNavigateHome={() => navigateToPage("shop")}
+        />
+      )}
       {page === "profile" && (
   <main className="profile-page">
     <section className="profile-shell">
@@ -2423,7 +2705,7 @@ paddingTop: "120px"
 
             <button
               className="profile-primary-action"
-              onClick={() => setPage("deposit")}
+              onClick={() => navigateToPage("deposit")}
             >
               Пополнить баланс
             </button>
@@ -2535,7 +2817,7 @@ paddingTop: "120px"
               )}
               <button
                 className="profile-inline-button"
-                onClick={() => setPage("deposit")}
+                onClick={() => navigateToPage("deposit")}
               >
                 Перейти к пополнению
               </button>
@@ -2834,7 +3116,7 @@ margin: "0 auto",
   <main className="roulette-page">
     <button
       className="roulette-back-button"
-      onClick={() => setPage("shop")}
+      onClick={() => navigateToPage("shop")}
     >
       Назад в магазин
     </button>
@@ -3056,7 +3338,7 @@ margin: "0 auto",
 
           <button
             className="deposit-back-button"
-            onClick={() => setPage("profile")}
+            onClick={() => navigateToPage("profile")}
           >
             Назад в кабинет
           </button>
@@ -3085,6 +3367,7 @@ margin: "0 auto",
     </section>
   </main>
 )}
+<SiteFooter onNavigate={navigateToPage} />
 {selectedProduct && (
   <div style={{
     position: "fixed",
@@ -3303,7 +3586,7 @@ overflowY: "auto",
   <button
     onClick={() => {
       setCartOpen(false)
-      setPage("shop")
+      navigateToPage("shop")
     }}
     style={{
       padding: "14px 28px",
