@@ -3502,7 +3502,7 @@ margin: "0 auto",
 )}
       {page === "deposit" && (
   <main className="deposit-page">
-    <section className="deposit-shell">
+    <section className={openPaymentRegion === "international" ? "deposit-shell international-only" : "deposit-shell"}>
       <div className="deposit-main-card">
         <div className="deposit-heading">
           <span>REDMOON BALANCE</span>
@@ -3605,101 +3605,107 @@ margin: "0 auto",
           </div>
         </div>
 
-        <div className="deposit-options">
-          {depositOptions.map((item) => (
-            <button
-              key={item.amount}
-              className={Number(depositAmount) === item.amount ? "deposit-option active" : "deposit-option"}
-              onClick={() => {
-                setDepositAmount(item.amount)
-              }}
-            >
-              <strong>{formatRubPrice(item.amount)}</strong>
-              <span>{getDepositBonus(item.amount) > 0 ? `+${formatRubPrice(getDepositBonus(item.amount))} бонус` : "Без бонуса"}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="deposit-fields-grid">
-          <label className="deposit-custom-field">
-            <span>Сумма (мин. {formatRubPrice(MIN_DEPOSIT_AMOUNT)})</span>
-            <input
-              type="number"
-              min={MIN_DEPOSIT_AMOUNT}
-              placeholder="Например, 750"
-              value={depositAmount}
-              onChange={(e) => {
-                setDepositAmount(e.target.value)
-              }}
-            />
-          </label>
-
-          <label className="deposit-custom-field">
-            <span>Сумма к зачислению</span>
-            <input
-              type="number"
-              value={depositTotal || ""}
-              readOnly
-            />
-          </label>
-
-          <label className="deposit-custom-field">
-            <span>Email</span>
-            <input
-              type="email"
-              placeholder="name@example.com"
-              value={depositEmail}
-              onChange={(e) => setDepositEmail(e.target.value)}
-            />
-          </label>
-        </div>
-
-        <div className="deposit-bonus-list">
-          {DEPOSIT_BONUS_TIERS.slice().reverse().map((tier) => (
-            <div key={tier.min}>
-              <b>+{tier.percent}%</b>
-              <span>От {formatRubPrice(tier.min)}</span>
+        {openPaymentRegion === "local" && (
+          <>
+            <div className="deposit-options">
+              {depositOptions.map((item) => (
+                <button
+                  key={item.amount}
+                  className={Number(depositAmount) === item.amount ? "deposit-option active" : "deposit-option"}
+                  onClick={() => {
+                    setDepositAmount(item.amount)
+                  }}
+                >
+                  <strong>{formatRubPrice(item.amount)}</strong>
+                  <span>{getDepositBonus(item.amount) > 0 ? `+${formatRubPrice(getDepositBonus(item.amount))} бонус` : "Без бонуса"}</span>
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
 
-        <div className="deposit-actions">
-          <button
-            className="deposit-pay-button"
-            onClick={handleDepositPayment}
-            disabled={isDepositSubmitting}
-          >
-            {isDepositSubmitting ? "Создаем платеж..." : "Перейти к оплате"}
-          </button>
+            <div className="deposit-fields-grid">
+              <label className="deposit-custom-field">
+                <span>Сумма (мин. {formatRubPrice(MIN_DEPOSIT_AMOUNT)})</span>
+                <input
+                  type="number"
+                  min={MIN_DEPOSIT_AMOUNT}
+                  placeholder="Например, 750"
+                  value={depositAmount}
+                  onChange={(e) => {
+                    setDepositAmount(e.target.value)
+                  }}
+                />
+              </label>
 
-          <button
-            className="deposit-back-button"
-            onClick={() => navigateToPage("profile")}
-          >
-            Назад в кабинет
-          </button>
-        </div>
+              <label className="deposit-custom-field">
+                <span>Сумма к зачислению</span>
+                <input
+                  type="number"
+                  value={depositTotal || ""}
+                  readOnly
+                />
+              </label>
+
+              <label className="deposit-custom-field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  placeholder="name@example.com"
+                  value={depositEmail}
+                  onChange={(e) => setDepositEmail(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="deposit-bonus-list">
+              {DEPOSIT_BONUS_TIERS.slice().reverse().map((tier) => (
+                <div key={tier.min}>
+                  <b>+{tier.percent}%</b>
+                  <span>От {formatRubPrice(tier.min)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="deposit-actions">
+              <button
+                className="deposit-pay-button"
+                onClick={handleDepositPayment}
+                disabled={isDepositSubmitting}
+              >
+                {isDepositSubmitting ? "Создаем платеж..." : "Перейти к оплате"}
+              </button>
+
+              <button
+                className="deposit-back-button"
+                onClick={() => navigateToPage("profile")}
+              >
+                Назад в кабинет
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
-      <aside className="deposit-summary-card">
-        <span>К зачислению</span>
-        <strong>{formatRubPrice(depositTotal)}</strong>
-        <div className="deposit-summary-line">
-          <p>Сумма</p>
-          <b>{formatRubPrice(depositValue)}</b>
-        </div>
-        <div className="deposit-summary-line">
-          <p>Бонус</p>
-          <b>{formatRubPrice(depositBonus)}</b>
-        </div>
-        <div className="deposit-user-card">
-          <img src={user?.photos?.[2]?.value || user?.photos?.[0]?.value} alt="avatar" />
-          <div>
-            <p>{user?.displayName || "Steam пользователь"}</p>
-            <span>{formatRubPrice(balance)} на балансе</span>
+      {openPaymentRegion === "local" && (
+        <aside className="deposit-summary-card">
+          <span>К зачислению</span>
+          <strong>{formatRubPrice(depositTotal)}</strong>
+          <div className="deposit-summary-line">
+            <p>Сумма</p>
+            <b>{formatRubPrice(depositValue)}</b>
           </div>
-        </div>
-      </aside>
+          <div className="deposit-summary-line">
+            <p>Бонус</p>
+            <b>{formatRubPrice(depositBonus)}</b>
+          </div>
+          <div className="deposit-user-card">
+            <img src={user?.photos?.[2]?.value || user?.photos?.[0]?.value} alt="avatar" />
+            <div>
+              <p>{user?.displayName || "Steam пользователь"}</p>
+              <span>{formatRubPrice(balance)} на балансе</span>
+            </div>
+          </div>
+        </aside>
+      )}
     </section>
   </main>
 )}

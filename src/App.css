@@ -1942,6 +1942,10 @@ align-self: center;
   margin: 0 auto;
 }
 
+.deposit-shell.international-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .deposit-main-card,
 .deposit-summary-card {
   border: 1px solid rgba(255,255,255,0.09);
