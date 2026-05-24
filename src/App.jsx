@@ -600,6 +600,15 @@ const navigateToPage = (nextPage) => {
   window.scrollTo({ top: 0, behavior: "smooth" })
 }
 
+const clearAccountState = () => {
+  setUser(null)
+  setBalance(0)
+  setPurchaseHistory([])
+  setPaymentHistory([])
+  setPendingPurchaseIntent(null)
+  localStorage.removeItem(PENDING_PURCHASE_STORAGE_KEY)
+}
+
 const getRouletteProductImage = (item) => {
   const productName = item?.name || item?.productName
   const matchedProduct = [...customProducts, ...products].find((product) => product.name === productName)
@@ -991,9 +1000,14 @@ useEffect(() => {
   const params = new URLSearchParams(window.location.search)
   const authTokenFromUrl = params.get("authToken")
   const steamIdFromUrl = params.get("steamId")
+  const storedSteamIdBeforeAuth = localStorage.getItem(STEAM_ID_STORAGE_KEY)
 
   if (authTokenFromUrl) {
     localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, authTokenFromUrl)
+  }
+
+  if (steamIdFromUrl && storedSteamIdBeforeAuth && storedSteamIdBeforeAuth !== steamIdFromUrl) {
+    clearAccountState()
   }
 
   if (steamIdFromUrl) {
@@ -1012,7 +1026,10 @@ useEffect(() => {
 
   const loadPurchaseHistory = (steamId) => {
     authorizedFetch(`${API_BASE_URL}/api/purchases/${steamId}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`Purchase history load failed: ${res.status}`)
+        return res.json()
+      })
       .then((purchases) => {
         if (Array.isArray(purchases)) {
           setPurchaseHistory(purchases.map(normalizePurchase))
@@ -1025,7 +1042,10 @@ useEffect(() => {
 
   const loadPaymentHistory = (steamId) => {
     authorizedFetch(`${API_BASE_URL}/api/payments/${steamId}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`Payment history load failed: ${res.status}`)
+        return res.json()
+      })
       .then((payments) => {
         if (Array.isArray(payments)) {
           setPaymentHistory(payments.map(normalizePayment))
@@ -1038,24 +1058,31 @@ useEffect(() => {
 
   const loadUserBySteamId = (steamId) => {
     if (!steamId) {
-      setUser(null)
+      clearAccountState()
       return
     }
 
     authorizedFetch(`https://dayz-shop.onrender.com/api/user/${steamId}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`User load failed: ${res.status}`)
+        return res.json()
+      })
       .then((dbUser) => {
         const normalizedUser = normalizeUser(dbUser)
 
-        setUser(normalizedUser)
-
-        if (dbUser?.balance !== undefined) {
-          setBalance(dbUser.balance)
+        if (!normalizedUser || String(normalizedUser.id) !== String(steamId)) {
+          clearAccountState()
+          return
         }
+
+        setUser(normalizedUser)
+        localStorage.setItem(STEAM_ID_STORAGE_KEY, normalizedUser.id)
+
+        setBalance(Number(dbUser?.balance || 0))
       })
       .catch((err) => {
         console.log("USER FALLBACK LOAD ERROR:", err)
-        setUser(null)
+        clearAccountState()
       })
 
     loadPurchaseHistory(steamId)
@@ -1063,34 +1090,60 @@ useEffect(() => {
   }
 
   authorizedFetch("https://dayz-shop.onrender.com/api/user")
-    .then((res) => res.json())
+    .then((res) => {
+      if (!res.ok) throw new Error(`Current user load failed: ${res.status}`)
+      return res.json()
+    })
     .then((data) => {
   console.log("USER FROM BACKEND:", data)
   const normalizedUser = normalizeUser(data)
   const savedSteamId = steamIdFromUrl || localStorage.getItem(STEAM_ID_STORAGE_KEY)
 
+  if (!normalizedUser) {
+    if (savedSteamId && getStoredAuthToken()) {
+      loadUserBySteamId(savedSteamId)
+    } else {
+      clearAccountState()
+    }
+    return
+  }
+
   setUser(normalizedUser)
+  setBalance(0)
 
       if (normalizedUser?.id) {
   localStorage.setItem(STEAM_ID_STORAGE_KEY, normalizedUser.id)
 
   authorizedFetch(`https://dayz-shop.onrender.com/api/user/${normalizedUser.id}`)
-    .then((res) => res.json())
+    .then((res) => {
+      if (!res.ok) throw new Error(`User balance load failed: ${res.status}`)
+      return res.json()
+    })
     .then((dbUser) => {
-      if (dbUser?.balance !== undefined) {
-        setBalance(dbUser.balance)
+      const dbSteamId = dbUser?.id || dbUser?.steamId
+
+      if (String(dbSteamId) === String(normalizedUser.id)) {
+        setBalance(Number(dbUser?.balance || 0))
       }
+    })
+    .catch((err) => {
+      console.log("USER BALANCE LOAD ERROR:", err)
+      setBalance(0)
     })
 
   loadPurchaseHistory(normalizedUser.id)
   loadPaymentHistory(normalizedUser.id)
-} else if (savedSteamId) {
-  loadUserBySteamId(savedSteamId)
 }
     })
     .catch((err) => {
       console.log("USER LOAD ERROR:", err)
-      loadUserBySteamId(steamIdFromUrl || localStorage.getItem(STEAM_ID_STORAGE_KEY))
+      const savedSteamId = steamIdFromUrl || localStorage.getItem(STEAM_ID_STORAGE_KEY)
+
+      if (savedSteamId && getStoredAuthToken()) {
+        loadUserBySteamId(savedSteamId)
+      } else {
+        clearAccountState()
+      }
     })
 }, [])
 
@@ -3141,6 +3194,7 @@ paddingTop: "120px"
         <button
           className="profile-logout"
           onClick={() => {
+            clearAccountState()
             localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
             localStorage.removeItem(STEAM_ID_STORAGE_KEY)
             window.location.href = "https://dayz-shop.onrender.com/auth/logout"
