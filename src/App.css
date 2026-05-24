@@ -1993,11 +1993,119 @@ align-self: center;
   font-weight: 900;
 }
 
+.deposit-payment-accordion {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.payment-region-card {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 82% 10%, rgba(255,59,79,0.14), transparent 34%),
+    linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.02)),
+    rgba(8,8,10,0.78);
+  overflow: hidden;
+  box-shadow:
+    0 0 28px rgba(0,0,0,0.26),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+}
+
+.payment-region-card:hover,
+.payment-region-card.open {
+  border-color: rgba(255,59,79,0.36);
+  box-shadow:
+    0 0 34px rgba(255,59,79,0.12),
+    0 0 28px rgba(0,0,0,0.32),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.payment-region-card.open {
+  transform: translateY(-1px);
+}
+
+.payment-region-toggle {
+  width: 100%;
+  min-height: 72px;
+  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 16px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: white;
+  text-align: left;
+  cursor: pointer;
+}
+
+.payment-region-title {
+  display: block;
+  color: white;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.1;
+  text-shadow: 0 0 18px rgba(255,59,79,0.18);
+}
+
+.payment-region-meta {
+  display: block;
+  grid-column: 1;
+  color: rgba(255,255,255,0.5);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.payment-region-chevron {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  color: #ff6a7b;
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+  transition: transform 0.24s ease, border-color 0.24s ease, background 0.24s ease;
+}
+
+.payment-region-card.open .payment-region-chevron {
+  transform: rotate(180deg);
+  border-color: rgba(255,59,79,0.42);
+  background: rgba(255,59,79,0.12);
+}
+
+.payment-region-panel {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: max-height 0.38s ease, opacity 0.24s ease, transform 0.24s ease;
+}
+
+.payment-region-card.open .payment-region-panel {
+  max-height: 1600px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.payment-region-panel > * {
+  margin: 0 20px 20px;
+}
+
 .deposit-method-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 260px));
   gap: 16px;
-  margin-top: 10px;
+  margin-top: 0;
 }
 
 .deposit-method-card {
@@ -2055,6 +2163,65 @@ align-self: center;
   height: 54px;
   object-fit: contain;
   object-position: left center;
+}
+
+.international-payment-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.international-payment-layout .boosty-method-card {
+  width: 100%;
+}
+
+.boosty-payment-notice {
+  padding: 18px;
+  border: 1px solid rgba(255,59,79,0.38);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 8% 0, rgba(255,59,79,0.18), transparent 34%),
+    rgba(12,12,14,0.76);
+  box-shadow:
+    0 0 28px rgba(255,59,79,0.12),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.78);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.boosty-payment-notice strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #ff6273;
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: 0.4px;
+}
+
+.boosty-payment-notice b {
+  display: block;
+  margin: 16px 0 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.boosty-payment-notice p {
+  margin: 0;
+}
+
+.boosty-payment-notice ul,
+.boosty-payment-notice ol {
+  margin: 0;
+  padding-left: 19px;
+}
+
+.boosty-payment-notice li {
+  margin: 6px 0;
+  padding-left: 2px;
 }
 
 .deposit-method-card strong,
@@ -2337,11 +2504,41 @@ align-self: center;
 
   .deposit-options,
   .deposit-method-grid,
+  .international-payment-layout,
   .deposit-fields-grid,
   .deposit-bonus-list,
   .deposit-actions {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .payment-region-toggle {
+    min-height: 66px;
+    padding: 16px;
+  }
+
+  .payment-region-title {
+    font-size: 18px;
+  }
+
+  .payment-region-meta {
+    font-size: 12px;
+  }
+
+  .payment-region-chevron {
+    width: 34px;
+    height: 34px;
+    font-size: 24px;
+  }
+
+  .payment-region-panel > * {
+    margin: 0 14px 16px;
+  }
+
+  .boosty-payment-notice {
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.5;
   }
 }
 

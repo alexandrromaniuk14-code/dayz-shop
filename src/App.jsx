@@ -515,6 +515,7 @@ function App() {
   const [paymentSuccess, setPaymentSuccess] = useState(false)
   const [page, setPage] = useState(getPageFromCurrentPath)
   const [depositAmount, setDepositAmount] = useState("")
+  const [openPaymentRegion, setOpenPaymentRegion] = useState("local")
 const [depositEmail, setDepositEmail] = useState("")
 const [isDepositSubmitting, setIsDepositSubmitting] = useState(false)
 const [cart, setCart] = useState([])
@@ -3506,7 +3507,7 @@ margin: "0 auto",
         <div className="deposit-heading">
           <span>REDMOON BALANCE</span>
           <h2>Пополнение баланса</h2>
-          <p>Выберите сумму, укажите email и перейдите к оплате FreeKassa. Баланс начислится автоматически после подтверждения платежа. Boosty откроется отдельной страницей доната.</p>
+          <p>Выберите сумму, укажите email и выберите подходящий способ оплаты. Баланс начислится автоматически после подтверждения платежа FreeKassa.</p>
           {pendingPurchaseIntent && (
             <button
               className="profile-inline-button"
@@ -3520,30 +3521,87 @@ margin: "0 auto",
         </div>
 
         <div className="deposit-methods">
-          <span>Метод оплаты</span>
-          <div className="deposit-method-grid">
-            <button className="deposit-method-card active" type="button">
-              <img
-                src="https://cdn.freekassa.net/banners/big-white-1.png"
-                alt="FreeKassa"
-              />
-            </button>
-            <button className="deposit-method-card disabled" type="button" disabled>
-              <strong>PAYPALYCH</strong>
-              <small>Скоро</small>
-            </button>
-            <a
-              className="deposit-method-card boosty-method-card"
-              href="https://boosty.to/redmoon33/donate"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <img
-                className="boosty-logo-image"
-                src="/boosty-logo.svg"
-                alt="Boosty"
-              />
-            </a>
+          <span>Способы оплаты</span>
+          <div className="deposit-payment-accordion">
+            <section className={openPaymentRegion === "local" ? "payment-region-card open" : "payment-region-card"}>
+              <button
+                className="payment-region-toggle"
+                type="button"
+                aria-expanded={openPaymentRegion === "local"}
+                onClick={() => setOpenPaymentRegion((current) => current === "local" ? "" : "local")}
+              >
+                <span className="payment-region-title">РФ / РБ 🇷🇺 🇧🇾</span>
+                <span className="payment-region-meta">FreeKassa, PayPalych</span>
+                <span className="payment-region-chevron" aria-hidden="true">⌄</span>
+              </button>
+
+              <div className="payment-region-panel">
+                <div className="deposit-method-grid">
+                  <button className="deposit-method-card active" type="button">
+                    <img
+                      src="https://cdn.freekassa.net/banners/big-white-1.png"
+                      alt="FreeKassa"
+                    />
+                  </button>
+                  <button className="deposit-method-card disabled" type="button" disabled>
+                    <strong>PAYPALYCH</strong>
+                    <small>Скоро</small>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className={openPaymentRegion === "international" ? "payment-region-card open international" : "payment-region-card international"}>
+              <button
+                className="payment-region-toggle"
+                type="button"
+                aria-expanded={openPaymentRegion === "international"}
+                onClick={() => setOpenPaymentRegion((current) => current === "international" ? "" : "international")}
+              >
+                <span className="payment-region-title">Международный 🇪🇺</span>
+                <span className="payment-region-meta">Boosty donate</span>
+                <span className="payment-region-chevron" aria-hidden="true">⌄</span>
+              </button>
+
+              <div className="payment-region-panel">
+                <div className="international-payment-layout">
+                  <a
+                    className="deposit-method-card boosty-method-card"
+                    href="https://boosty.to/redmoon33/donate"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <img
+                      className="boosty-logo-image"
+                      src="/boosty-logo.svg"
+                      alt="Boosty"
+                    />
+                  </a>
+
+                  <div className="boosty-payment-notice">
+                    <strong>ВАЖНО:</strong>
+                    <p>Для совершения оплаты и получения средств на игровой аккаунт обязательно ознакомьтесь с инструкцией.</p>
+
+                    <b>Обратите внимание:</b>
+                    <ul>
+                      <li>Донаты в Boosty отображаются в долларах США.</li>
+                      <li>Курс валют может меняться ежедневно.</li>
+                      <li>На сайте присутствует комиссия платёжной системы.</li>
+                      <li>Итоговая сумма начисления на сайте соответствует фактически поступившей сумме на Boosty проекта.</li>
+                      <li>В отдельных случаях администрация проекта может округлить сумму начисления (это уточняется в тикете самой администрацией).</li>
+                    </ul>
+
+                    <b>Инструкция по оплате:</b>
+                    <ol>
+                      <li>На нашем Discord-сервере в категории «АДМИНИСТРАЦИЯ» создайте тикет «Помощь-с-оплатой».</li>
+                      <li>Нажмите кнопку оплаты (DONATE) через Boosty и следуйте инструкциям сервиса.</li>
+                      <li>После успешной оплаты отправьте в открытый тикет скриншот, подтверждающий успешное проведение операции.</li>
+                      <li>Ожидайте зачисление средств на баланс аккаунта.</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
 
