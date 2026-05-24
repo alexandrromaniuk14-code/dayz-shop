@@ -3914,290 +3914,127 @@ overflowY: "auto",
     </div>
 
 {cartOpen && (
-  <div style={{
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.75)",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 9999
-  }}>
-    <div style={{
-      width: "520px",
-      maxHeight: "80vh",
-      overflowY: "auto",
-      background: "rgba(18,18,18,0.96)",
-      border: "1px solid rgba(255,255,255,0.1)",
-      borderRadius: "22px",
-      padding: "28px",
-      boxShadow: "0 0 45px rgba(255,59,79,0.25)"
-    }}>
-      <div style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "24px"
-      }}>
-        <h2 style={{
-  fontSize: "32px",
-  color: "white",
-  textShadow: "0 0 18px rgba(255,59,79,0.45)",
-  fontWeight: "bold"
-}}>
-  Корзина
-</h2>
-
+  <div className="cart-modal-overlay">
+    <div className="cart-modal">
+      <div className="cart-modal-header">
+        <div>
+          <span>REDMOON CART</span>
+          <h2>Корзина</h2>
+        </div>
         <button
+          className="cart-modal-close"
           onClick={() => setCartOpen(false)}
-          style={{
-            background: "rgba(255,255,255,0.08)",
-            border: "none",
-            color: "white",
-            width: "36px",
-            height: "36px",
-            borderRadius: "50%",
-            cursor: "pointer",
-            fontSize: "18px"
-          }}
+          type="button"
+          aria-label="Закрыть корзину"
         >
           ✕
         </button>
       </div>
 
       {cart.length === 0 ? (
-        <div style={{
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: "20px",
-  padding: "50px 0"
-}}>
-
-  <p style={{
-    color: "#999",
-    fontSize: "20px",
-    fontWeight: "bold"
-  }}>
-    Корзина пуста
-  </p>
-
-  <button
-    onClick={() => {
-      setCartOpen(false)
-      navigateToPage("shop")
-    }}
-    style={{
-      padding: "14px 28px",
-      borderRadius: "14px",
-      border: "1px solid rgba(255,59,79,0.35)",
-      background: "linear-gradient(135deg, #ff3b4f, #b11226)",
-      color: "white",
-      fontWeight: "bold",
-      fontSize: "16px",
-      cursor: "pointer",
-      boxShadow: "0 0 20px rgba(255,59,79,0.25)",
-      transition: "0.25s"
-    }}
-
-    onMouseEnter={(e) => {
-      e.currentTarget.style.transform = "scale(1.05)"
-    }}
-
-    onMouseLeave={(e) => {
-      e.currentTarget.style.transform = "scale(1)"
-    }}
-  >
-    Вернуться в магазин
-  </button>
-
-</div>
+        <div className="cart-empty-state">
+          <strong>Корзина пуста</strong>
+          <p>Добавьте товары из магазина, чтобы оформить покупку.</p>
+          <button
+            className="cart-secondary-action"
+            onClick={() => {
+              setCartOpen(false)
+              navigateToPage("shop")
+            }}
+            type="button"
+          >
+            Вернуться в магазин
+          </button>
+        </div>
       ) : (
         <>
-          {cart.map((item, index) => (
-            <div key={index} style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "15px",
-              background: "rgba(255,255,255,0.04)",
-              padding: "14px",
-              borderRadius: "14px",
-              marginBottom: "12px"
-            }}>
-              <div style={{
-  display: "flex",
-  flexDirection: "column",
-  gap: "6px"
-}}>
-  <h3 style={{
-    fontSize: "20px",
-    color: "white",
-    fontWeight: "bold",
-    textShadow: "0 0 12px rgba(255,59,79,0.25)"
-  }}>
-    {item.name}
-  </h3>
-  <div style={{
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  gap: "8px",
-  marginTop: "10px"
-}}>
+          <div className="cart-items-list">
+            {cart.map((item, index) => (
+              <article className="cart-item-row" key={`${item.name}-${index}`}>
+                <div className="cart-item-media">
+                  {item.image ? (
+                    <img src={item.image} alt={item.name} />
+                  ) : (
+                    <span>{item.name?.slice(0, 1) || "R"}</span>
+                  )}
+                </div>
 
-  <span style={{
-    color: "#999",
-    fontSize: "13px",
-    fontWeight: "bold",
-    textTransform: "uppercase",
-    letterSpacing: "1px"
-  }}>
-    Кол-во
-  </span>
+                <div className="cart-item-copy">
+                  <h3>{item.name}</h3>
+                  <span>{formatRubPrice(item.priceValue || item.price)}</span>
+                </div>
 
-  <div style={{
-    display: "flex",
-    alignItems: "center",
-    background: "rgba(255,255,255,0.03)",
-    border: "1px solid rgba(255,59,79,0.35)",
-    borderRadius: "12px",
-    overflow: "hidden"
-  }}>
+                <div className="cart-item-controls">
+                  <span>Кол-во</span>
+                  <div className="cart-quantity-stepper">
+                    <button
+                      onClick={() => {
+                        if ((item.quantity || 1) > 1) {
+                          setCart(
+                            cart.map((cartItem) =>
+                              cartItem.name === item.name
+                                ? {
+                                    ...cartItem,
+                                    quantity: (cartItem.quantity || 1) - 1
+                                  }
+                                : cartItem
+                            )
+                          )
+                        }
+                      }}
+                      type="button"
+                      aria-label={`Уменьшить количество ${item.name}`}
+                    >
+                      -
+                    </button>
+                    <strong>{item.quantity || 1}</strong>
+                    <button
+                      onClick={() => {
+                        setCart(
+                          cart.map((cartItem) =>
+                            cartItem.name === item.name
+                              ? {
+                                  ...cartItem,
+                                  quantity: (cartItem.quantity || 1) + 1
+                                }
+                              : cartItem
+                          )
+                        )
+                      }}
+                      type="button"
+                      aria-label={`Увеличить количество ${item.name}`}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
 
-    <button
-      onClick={() => {
-        if ((item.quantity || 1) > 1) {
-          setCart(
-            cart.map((cartItem) =>
-              cartItem.name === item.name
-                ? {
-                    ...cartItem,
-                    quantity: (cartItem.quantity || 1) - 1
-                  }
-                : cartItem
-            )
-          )
-        }
-      }}
-      style={{
-        width: "48px",
-        height: "48px",
-        border: "none",
-        background: "transparent",
-        color: "white",
-        fontSize: "28px",
-        cursor: "pointer"
-      }}
-    >
-      -
-    </button>
+                <div className="cart-item-total">
+                  <span>Сумма</span>
+                  <strong>{formatRubPrice(Number(item.priceValue || getNumericPrice(item.price)) * (item.quantity || 1))}</strong>
+                </div>
 
-    <div style={{
-      width: "70px",
-      textAlign: "center",
-      color: "white",
-      fontWeight: "bold",
-      fontSize: "22px",
-      borderLeft: "1px solid rgba(255,59,79,0.25)",
-      borderRight: "1px solid rgba(255,59,79,0.25)",
-      height: "48px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }}>
-      {item.quantity || 1}
-    </div>
-
-    <button
-      onClick={() => {
-        setCart(
-          cart.map((cartItem) =>
-            cartItem.name === item.name
-              ? {
-                  ...cartItem,
-                  quantity: (cartItem.quantity || 1) + 1
-                }
-              : cartItem
-          )
-        )
-      }}
-      style={{
-        width: "48px",
-        height: "48px",
-        border: "none",
-        background: "transparent",
-        color: "white",
-        fontSize: "28px",
-        cursor: "pointer"
-      }}
-    >
-      +
-    </button>
-
-  </div>
-</div>
-
-  <div style={{
-    display: "inline-block",
-    background: "rgba(255,59,79,0.12)",
-    border: "1px solid rgba(255,59,79,0.35)",
-    padding: "6px 12px",
-    borderRadius: "999px",
-    color: "#ff5a6b",
-    fontWeight: "bold",
-    fontSize: "15px",
-    width: "fit-content"
-  }}>
-    {item.price}
-  </div>
-</div>
-
-              <button
-                onClick={() => setCart(cart.filter((_, i) => i !== index))}
-                style={{
-                  background: "rgba(255,59,79,0.18)",
-                  border: "1px solid rgba(255,59,79,0.4)",
-                  color: "white",
-                  padding: "8px 12px",
-                  borderRadius: "8px",
-                  cursor: "pointer"
-                }}
-              >
-                Удалить
-              </button>
-            </div>
-          ))}
-
-          <div style={{
-            marginTop: "18px",
-            marginBottom: "14px",
-            padding: "14px",
-            borderRadius: "12px",
-            background: "rgba(255,255,255,0.05)",
-            display: "flex",
-            justifyContent: "space-between",
-            fontWeight: "bold"
-          }}>
-            <span>Итого:</span>
-            <span>{formatRubPrice(cartTotal)}</span>
+                <button
+                  className="cart-remove-button"
+                  onClick={() => setCart(cart.filter((_, i) => i !== index))}
+                  type="button"
+                >
+                  Удалить
+                </button>
+              </article>
+            ))}
           </div>
 
+          <div className="cart-summary-row">
+            <span>Итого</span>
+            <strong>{formatRubPrice(cartTotal)}</strong>
+          </div>
           <button
+            className="cart-checkout-button"
             onClick={handleCartCheckout}
             disabled={isPurchasing}
-           style={{
-            width: "100%",
-            padding: "15px",
-            border: "none",
-            borderRadius: "12px",
-            background: "linear-gradient(135deg, #ff3b4f, #b11226)",
-            color: "white",
-            fontWeight: "bold",
-            cursor: "pointer",
-            fontSize: "16px"
-          }}>
+            type="button"
+          >
             {isPurchasing ? "Оплата..." : `Оплатить ${formatRubPrice(cartTotal)}`}
           </button>
         </>
