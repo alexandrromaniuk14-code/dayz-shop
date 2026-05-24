@@ -1661,8 +1661,23 @@ const handleMoveProductToCart = (product) => {
   })
 
   setSelectedProduct(null)
-  setCartOpen(true)
-  showProfileNotice(`${cartProduct.name} перемещен в корзину`)
+  setMessage({
+    type: "success",
+    text: `${cartProduct.name} перемещен в корзину`,
+    actionLabel: "Открыть корзину",
+    onAction: () => {
+      setCartOpen(true)
+      setMessage(null)
+    }
+  })
+
+  setTimeout(() => {
+    setMessage((currentMessage) =>
+      currentMessage?.text === `${cartProduct.name} перемещен в корзину`
+        ? null
+        : currentMessage
+    )
+  }, 4500)
 }
 
 const handleCartCheckout = () => {
@@ -4099,6 +4114,15 @@ overflowY: "auto",
     <div className="toast-copy">
       <span>{message.type === "success" ? "Успешно" : "Внимание"}</span>
       <strong>{message.text}</strong>
+      {message.actionLabel && (
+        <button
+          className="toast-action-button"
+          onClick={message.onAction}
+          type="button"
+        >
+          {message.actionLabel}
+        </button>
+      )}
     </div>
     <div className="toast-progress" />
   </div>
