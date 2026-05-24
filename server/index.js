@@ -7,15 +7,12 @@ const multer = require("multer")
 const path = require("path")
 const fs = require("fs")
 const crypto = require("crypto")
-const https = require("https")
 const db = require("./database")
 
 const app = express()
 
 app.set("trust proxy", 1)
 const FRONTEND_URL = "https://redmoon-dayz.ru"
-const FRONTEND_HOST = "redmoon-dayz.ru"
-const FRONTEND_HOSTING_IP = process.env.FRONTEND_HOSTING_IP || "31.31.198.142"
 const ADMIN_STEAM_IDS = new Set(["76561198722502186"])
 const AUTH_TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET || process.env.SESSION_SECRET || "redmoon_auth_secret"
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || ""
@@ -232,6 +229,8 @@ const formatPaymentAmount = (value) => {
   return Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
 }
 
+const formatRub = (value) => `${value} RUB`
+
 const getDepositBonus = (amount) => {
   const tier = DEPOSIT_BONUS_TIERS.find((item) => amount >= item.min)
 
@@ -311,7 +310,7 @@ const formatProduct = (product) => ({
   category: product.category || "Все для строительства",
   oldPriceValue: Number(product.price || 0),
   discountPercent: Number(product.discountPercent || 0),
-  price: `${getDiscountedPrice(product.price, product.discountPercent)}₽`,
+  price: formatRub(getDiscountedPrice(product.price, product.discountPercent)),
   priceValue: getDiscountedPrice(product.price, product.discountPercent),
   image: product.image,
   isActive: Boolean(product.isActive),
@@ -646,7 +645,7 @@ const renderTestPaymentPage = (payment) => `
 
       <div class="amount">
         <span>К оплате</span>
-        <strong>${Number(payment.amount)} ₽</strong>
+        <strong>${formatRub(Number(payment.amount))}</strong>
       </div>
 
       <div class="meta">
@@ -722,66 +721,6 @@ passport.use(new SteamStrategy({
     }
   )
 }))
-
-const hopByHopHeaders = new Set([
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade"
-])
-
-function proxyFrontendFromHosting(req, res, next) {
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    return next()
-  }
-
-  const proxyRequest = https.request({
-    host: FRONTEND_HOSTING_IP,
-    servername: FRONTEND_HOST,
-    method: req.method,
-    path: req.originalUrl,
-    headers: {
-      Host: FRONTEND_HOST,
-      "User-Agent": req.get("user-agent") || "",
-      Accept: req.get("accept") || "*/*",
-      "Accept-Language": req.get("accept-language") || "",
-      "Accept-Encoding": req.get("accept-encoding") || ""
-    }
-  }, (proxyResponse) => {
-    res.status(proxyResponse.statusCode || 502)
-
-    for (const [header, value] of Object.entries(proxyResponse.headers)) {
-      if (!hopByHopHeaders.has(header.toLowerCase()) && value !== undefined) {
-        res.setHeader(header, value)
-      }
-    }
-
-    proxyResponse.pipe(res)
-  })
-
-  proxyRequest.setTimeout(10000, () => {
-    proxyRequest.destroy(new Error("Frontend proxy timeout"))
-  })
-
-  proxyRequest.on("error", (err) => {
-    console.log("Frontend proxy failed:", err.message)
-
-    if (!res.headersSent) {
-      res.status(502).send("Frontend временно недоступен")
-      return
-    }
-
-    res.end()
-  })
-
-  proxyRequest.end()
-}
-
-app.get(/^(?!\/(?:api|auth|uploads)(?:\/|$)).*/, proxyFrontendFromHosting)
 
 app.get("/auth/steam", passport.authenticate("steam"))
 
@@ -861,10 +800,11 @@ app.get("/api/user/:steamId", (req, res) => {
 })
 
 app.post("/api/promocodes/redeem", (req, res) => {
-  const { steamId, code } = req.body
+  const { code } = req.body
   const normalizedCode = String(code || "").trim().toUpperCase()
-  const currentSteamId = req.user?.id || steamId
-  const username = req.user?.displayName || "Unknown"
+  const currentSteamId = getRequestSteamId(req)
+  const requestUser = getRequestUser(req)
+  const username = requestUser?.displayName || requestUser?.username || "Unknown"
 
   if (!currentSteamId) {
     return res.status(401).json({ error: "Войдите через Steam" })
@@ -1378,7 +1318,7 @@ app.post("/api/admin/balance/add", requireAdmin, (req, res) => {
                   createdAt
                 })
                 writeAdminLog(req, "balance_add", steamId, { amount, note })
-                sendDiscordNotification(`REDMOON: вручную начислено ${amount} ₽ игроку ${steamId}. ${note || ""}`)
+                sendDiscordNotification(`REDMOON: вручную начислено ${formatRub(amount)} игроку ${steamId}. ${note || ""}`)
               }
             )
           }
@@ -1752,7 +1692,7 @@ app.post("/api/transfer", (req, res) => {
                                   createdAt
                                 }
                               })
-                              sendDiscordNotification(`REDMOON: ${senderSteamId} перевел ${amount} ₽ игроку ${recipientSteamId}`)
+                              sendDiscordNotification(`REDMOON: ${senderSteamId} перевел ${formatRub(amount)} игроку ${recipientSteamId}`)
                             })
                           }
                         )
@@ -1771,9 +1711,9 @@ app.post("/api/transfer", (req, res) => {
 })
 
 app.post("/api/purchase", (req, res) => {
-  const { steamId, productName } = req.body
+  const { productName } = req.body
   const requestUser = getRequestUser(req)
-  const currentSteamId = getRequestSteamId(req) || steamId
+  const currentSteamId = getRequestSteamId(req)
   const username = requestUser?.displayName || "Unknown"
 
   if (!currentSteamId) {
@@ -1826,12 +1766,19 @@ app.post("/api/purchase", (req, res) => {
               `
               UPDATE users
               SET balance = balance - ?
-              WHERE steamId = ?
+              WHERE steamId = ? AND balance >= ?
               `,
-              [productPrice, currentSteamId],
-              (err) => {
+              [productPrice, currentSteamId, productPrice],
+              function (err) {
                 if (err) {
                   return res.status(500).json({ error: err.message })
+                }
+
+                if (this.changes === 0) {
+                  return res.status(400).json({
+                    error: "Недостаточно средств на балансе",
+                    balance: currentBalance
+                  })
                 }
 
                 const createdAt = new Date().toISOString()
@@ -1862,7 +1809,7 @@ app.post("/api/purchase", (req, res) => {
                       balance: currentBalance - productPrice,
                       purchase
                     })
-                    sendDiscordNotification(`REDMOON: ${currentSteamId} купил ${productName} за ${productPrice} ₽`)
+                    sendDiscordNotification(`REDMOON: ${currentSteamId} купил ${productName} за ${formatRub(productPrice)}`)
                   }
                 )
               }
@@ -1875,9 +1822,9 @@ app.post("/api/purchase", (req, res) => {
 })
 
 app.post("/api/purchase/cart", (req, res) => {
-  const { steamId, items } = req.body
+  const { items } = req.body
   const requestUser = getRequestUser(req)
-  const currentSteamId = getRequestSteamId(req) || steamId
+  const currentSteamId = getRequestSteamId(req)
   const username = requestUser?.displayName || "Unknown"
 
   if (!currentSteamId) {
@@ -1934,13 +1881,21 @@ app.post("/api/purchase/cart", (req, res) => {
               `
               UPDATE users
               SET balance = balance - ?
-              WHERE steamId = ?
+              WHERE steamId = ? AND balance >= ?
               `,
-              [total, currentSteamId],
-              (err) => {
+              [total, currentSteamId, total],
+              function (err) {
                 if (err) {
                   db.run("ROLLBACK")
                   return res.status(500).json({ error: err.message })
+                }
+
+                if (this.changes === 0) {
+                  db.run("ROLLBACK")
+                  return res.status(400).json({
+                    error: "Недостаточно средств на балансе",
+                    balance: currentBalance
+                  })
                 }
 
                 const insertNextPurchase = (index) => {
@@ -1952,7 +1907,7 @@ app.post("/api/purchase/cart", (req, res) => {
                         return res.status(500).json({ error: err.message })
                       }
 
-                      sendDiscordNotification(`REDMOON: ${currentSteamId} оплатил корзину на ${total} ₽`)
+                      sendDiscordNotification(`REDMOON: ${currentSteamId} оплатил корзину на ${formatRub(total)}`)
                       return res.json({
                         success: true,
                         total,
@@ -2179,7 +2134,7 @@ app.post("/api/roulette/spin", (req, res) => {
 
                               broadcastRouletteDrops()
                               sendDiscordNotification(
-                                `REDMOON: ${steamId} открыл рулетку за ${ROULETTE_PRICE} ₽ и получил ${prize.name}`
+                                `REDMOON: ${steamId} открыл рулетку за ${formatRub(ROULETTE_PRICE)} и получил ${prize.name}`
                               )
 
                               res.json({
@@ -2188,7 +2143,7 @@ app.post("/api/roulette/spin", (req, res) => {
                                 balance,
                                 prize: {
                                   name: prize.name,
-                                  price: `${prize.price}₽`,
+                                  price: formatRub(prize.price),
                                   priceValue: prize.price
                                 },
                                 purchase,
@@ -2230,11 +2185,11 @@ app.post("/api/deposit", (req, res) => {
   }
 
   if (!amount || amount < MIN_DEPOSIT_AMOUNT) {
-    return res.status(400).json({ error: `Минимальная сумма пополнения ${MIN_DEPOSIT_AMOUNT} ₽` })
+    return res.status(400).json({ error: `Минимальная сумма пополнения ${formatRub(MIN_DEPOSIT_AMOUNT)}` })
   }
 
   if (amount > MAX_DEPOSIT_AMOUNT) {
-    return res.status(400).json({ error: `Максимальная сумма пополнения ${MAX_DEPOSIT_AMOUNT} ₽` })
+    return res.status(400).json({ error: `Максимальная сумма пополнения ${formatRub(MAX_DEPOSIT_AMOUNT)}` })
   }
 
   if (!isValidEmail(email)) {
@@ -2244,8 +2199,8 @@ app.post("/api/deposit", (req, res) => {
   const bonus = getDepositBonus(amount)
   const creditedAmount = getDepositTotal(amount)
   const note = bonus > 0
-    ? `FreeKassa: ожидает оплату ${amount} ₽, к зачислению ${creditedAmount} ₽`
-    : `FreeKassa: ожидает оплату ${amount} ₽`
+    ? `FreeKassa: ожидает оплату ${formatRub(amount)}, к зачислению ${formatRub(creditedAmount)}`
+    : `FreeKassa: ожидает оплату ${formatRub(amount)}`
 
   ensureUser(steamId, requestUser?.displayName || requestUser?.username || "Steam пользователь", (err) => {
     if (err) {
@@ -2359,8 +2314,8 @@ app.all("/api/freekassa/notify", (req, res) => {
 
           const creditedAmount = Number(payment.creditedAmount || payment.amount || 0)
           const note = payment.providerAmount && payment.providerAmount !== creditedAmount
-            ? `Пополнение FreeKassa: оплачено ${payment.providerAmount} ₽, зачислено ${creditedAmount} ₽`
-            : `Пополнение FreeKassa: зачислено ${creditedAmount} ₽`
+            ? `Пополнение FreeKassa: оплачено ${formatRub(payment.providerAmount)}, зачислено ${formatRub(creditedAmount)}`
+            : `Пополнение FreeKassa: зачислено ${formatRub(creditedAmount)}`
 
           db.run(
             `
@@ -2399,7 +2354,7 @@ app.all("/api/freekassa/notify", (req, res) => {
                     }
 
                     sendDiscordNotification(
-                      `REDMOON: ${payment.steamId} пополнил баланс через FreeKassa на ${creditedAmount} ₽`
+                      `REDMOON: ${payment.steamId} пополнил баланс через FreeKassa на ${formatRub(creditedAmount)}`
                     )
                     res.send("YES")
                   })
