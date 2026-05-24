@@ -3506,7 +3506,7 @@ margin: "0 auto",
         <div className="deposit-heading">
           <span>REDMOON BALANCE</span>
           <h2>Пополнение баланса</h2>
-          <p>Выберите сумму, укажите email и перейдите к оплате FreeKassa. Баланс начислится автоматически после подтверждения платежа.</p>
+          <p>Выберите сумму, укажите email и перейдите к оплате FreeKassa. Баланс начислится автоматически после подтверждения платежа. Boosty откроется отдельной страницей доната.</p>
           {pendingPurchaseIntent && (
             <button
               className="profile-inline-button"
@@ -3532,6 +3532,18 @@ margin: "0 auto",
               <strong>PAYPALYCH</strong>
               <small>Скоро</small>
             </button>
+            <a
+              className="deposit-method-card boosty-method-card"
+              href="https://boosty.to/redmoon33/donate"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img
+                className="boosty-logo-image"
+                src="/boosty-logo.svg"
+                alt="Boosty"
+              />
+            </a>
           </div>
         </div>
 
