@@ -27,7 +27,8 @@ const EXCHANGE_RATE_CACHE_TTL_MS = 1000 * 60 * 60 * 3
 const uploadsDir = path.join(__dirname, "uploads")
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
-const ROULETTE_PRICE = 120
+const ROULETTE_PRICE = 0
+const ROULETTE_COOLDOWN_MS = 24 * 60 * 60 * 1000
 const MIN_DEPOSIT_AMOUNT = 10
 const MAX_DEPOSIT_AMOUNT = 100000
 const DEPOSIT_BONUS_TIERS = [
@@ -571,7 +572,7 @@ const normalizeCartItems = (items, callback) => {
   )
 }
 
-const getRoulettePrizeProducts = (callback) => {
+const getRouletteCatalogProducts = (callback) => {
   const prizeMap = new Map()
 
   Object.entries(productCatalog).forEach(([name, price], index) => {
@@ -614,6 +615,46 @@ const getRoulettePrizeProducts = (callback) => {
   )
 }
 
+const normalizeRouletteItem = (product, settingsMap, hasSettings) => {
+  const setting = settingsMap.get(product.name)
+  const defaultActive = hasSettings ? false : true
+  const isActive = setting ? Boolean(setting.isActive) : defaultActive
+  const weight = Math.max(Number(setting?.weight || 10), 1)
+  const price = getDiscountedPrice(product.price, product.discountPercent)
+
+  return {
+    ...product,
+    price,
+    priceValue: price,
+    isRouletteActive: isActive,
+    rouletteWeight: weight
+  }
+}
+
+const getRoulettePrizeProducts = (callback) => {
+  getRouletteCatalogProducts((err, products) => {
+    if (err) {
+      callback(err)
+      return
+    }
+
+    db.all("SELECT productName, isActive, weight FROM roulette_items", [], (err, settings) => {
+      if (err) {
+        callback(err)
+        return
+      }
+
+      const settingsMap = new Map((settings || []).map((item) => [item.productName, item]))
+      const hasSettings = settingsMap.size > 0
+      const prizes = products
+        .map((product) => normalizeRouletteItem(product, settingsMap, hasSettings))
+        .filter((product) => product.isRouletteActive && product.rouletteWeight > 0)
+
+      callback(null, prizes)
+    })
+  })
+}
+
 const getRoulettePrize = (callback) => {
   getRoulettePrizeProducts((err, products) => {
     if (err) {
@@ -621,18 +662,57 @@ const getRoulettePrize = (callback) => {
       return
     }
 
-    const prizes = products.map((product) => ({
-      name: product.name,
-      price: getDiscountedPrice(product.price, product.discountPercent)
-    }))
+    const weightedPrizes = products.flatMap((product) => {
+      const weight = Math.max(Number(product.rouletteWeight || 1), 1)
 
-    if (prizes.length === 0) {
+      return Array.from({ length: weight }, () => ({
+        name: product.name,
+        price: product.priceValue ?? getDiscountedPrice(product.price, product.discountPercent)
+      }))
+    })
+
+    if (weightedPrizes.length === 0) {
       callback(new Error("Нет доступных призов для рулетки"))
       return
     }
 
-    callback(null, prizes[Math.floor(Math.random() * prizes.length)])
+    callback(null, weightedPrizes[Math.floor(Math.random() * weightedPrizes.length)])
   })
+}
+
+const getRouletteCooldown = (steamId, callback) => {
+  db.get(
+    `
+    SELECT createdAt
+    FROM roulette_spins
+    WHERE steamId = ?
+    ORDER BY id DESC
+    LIMIT 1
+    `,
+    [steamId],
+    (err, row) => {
+      if (err) {
+        callback(err)
+        return
+      }
+
+      if (!row?.createdAt) {
+        callback(null, { allowed: true, remainingMs: 0, nextAvailableAt: null })
+        return
+      }
+
+      const lastSpinAt = new Date(row.createdAt).getTime()
+      const nextSpinAt = lastSpinAt + ROULETTE_COOLDOWN_MS
+      const remainingMs = nextSpinAt - Date.now()
+
+      callback(null, {
+        allowed: remainingMs <= 0,
+        remainingMs: Math.max(remainingMs, 0),
+        nextAvailableAt: new Date(nextSpinAt).toISOString(),
+        lastSpinAt: row.createdAt
+      })
+    }
+  )
 }
 
 const ensureUser = (steamId, username, callback) => {
@@ -1147,7 +1227,128 @@ app.get("/api/roulette/prizes", (req, res) => {
       return res.status(500).json({ error: err.message })
     }
 
-    res.json(products.map(formatProduct))
+    res.json(products.map((product) => ({
+      ...formatProduct({
+        ...product,
+        price: product.oldPriceValue || product.priceValue || product.price,
+        discountPercent: 0
+      }),
+      price: formatRub(product.priceValue),
+      priceValue: product.priceValue,
+      rouletteWeight: product.rouletteWeight
+    })))
+  })
+})
+
+app.get("/api/roulette/status", (req, res) => {
+  const steamId = getRequestSteamId(req)
+
+  if (!steamId) {
+    return res.json({ authenticated: false, allowed: false, remainingMs: 0, nextAvailableAt: null })
+  }
+
+  getRouletteCooldown(steamId, (err, cooldown) => {
+    if (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    res.json({
+      authenticated: true,
+      ...cooldown
+    })
+  })
+})
+
+app.get("/api/admin/roulette", requireAdmin, (req, res) => {
+  getRouletteCatalogProducts((err, products) => {
+    if (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    db.all("SELECT productName, isActive, weight FROM roulette_items", [], (err, settings) => {
+      if (err) {
+        return res.status(500).json({ error: err.message })
+      }
+
+      const settingsMap = new Map((settings || []).map((item) => [item.productName, item]))
+      const hasSettings = settingsMap.size > 0
+      const items = products.map((product) => {
+        const item = normalizeRouletteItem(product, settingsMap, hasSettings)
+
+        return {
+          id: product.id,
+          name: product.name,
+          price: formatRub(item.priceValue),
+          priceValue: item.priceValue,
+          category: product.category || "Все для строительства",
+          image: product.image,
+          isActive: item.isRouletteActive,
+          weight: item.rouletteWeight
+        }
+      })
+
+      res.json({
+        cooldownHours: 24,
+        items
+      })
+    })
+  })
+})
+
+app.put("/api/admin/roulette", requireAdmin, adminMutationRateLimiter, (req, res) => {
+  const items = Array.isArray(req.body.items) ? req.body.items : []
+
+  getRouletteCatalogProducts((err, products) => {
+    if (err) {
+      return res.status(500).json({ error: err.message })
+    }
+
+    const catalogNames = new Set(products.map((product) => product.name))
+    const normalizedItems = items
+      .map((item) => ({
+        productName: String(item.productName || item.name || "").trim(),
+        isActive: item.isActive ? 1 : 0,
+        weight: Math.min(Math.max(Math.floor(Number(item.weight || 1)), 1), 1000)
+      }))
+      .filter((item) => catalogNames.has(item.productName))
+
+    db.serialize(() => {
+      db.run("BEGIN IMMEDIATE")
+      db.run("DELETE FROM roulette_items", [], (err) => {
+        if (err) {
+          db.run("ROLLBACK")
+          return res.status(500).json({ error: err.message })
+        }
+
+        const statement = db.prepare(
+          `
+          INSERT INTO roulette_items (productName, isActive, weight, updatedAt)
+          VALUES (?, ?, ?, ?)
+          `
+        )
+        const updatedAt = new Date().toISOString()
+
+        normalizedItems.forEach((item) => {
+          statement.run(item.productName, item.isActive, item.weight, updatedAt)
+        })
+
+        statement.finalize((err) => {
+          if (err) {
+            db.run("ROLLBACK")
+            return res.status(500).json({ error: err.message })
+          }
+
+          db.run("COMMIT", (err) => {
+            if (err) {
+              return res.status(500).json({ error: err.message })
+            }
+
+            writeAdminLog(req, "roulette_settings_update", "roulette", `${normalizedItems.length} товаров`)
+            res.json({ success: true })
+          })
+        })
+      })
+    })
   })
 })
 
@@ -2274,182 +2475,144 @@ app.post("/api/roulette/spin", purchaseRateLimiter, (req, res) => {
     return res.status(401).json({ error: "Войдите через Steam" })
   }
 
-  getRoulettePrize((err, prize) => {
+  ensureUser(steamId, username, (err) => {
     if (err) {
-      const status = err.message.includes("Нет доступных призов") ? 409 : 500
-
-      return res.status(status).json({ error: err.message })
+      return res.status(500).json({ error: err.message })
     }
 
-    ensureUser(steamId, username, (err) => {
+    getRouletteCooldown(steamId, (err, cooldown) => {
       if (err) {
         return res.status(500).json({ error: err.message })
       }
 
-      const createdAt = new Date().toISOString()
+      if (!cooldown.allowed) {
+        return res.status(429).json({
+          error: "Бесплатная рулетка доступна раз в 24 часа",
+          ...cooldown
+        })
+      }
 
-      db.serialize(() => {
-        db.run("BEGIN IMMEDIATE")
+      getRoulettePrize((err, prize) => {
+        if (err) {
+          const status = err.message.includes("Нет доступных призов") ? 409 : 500
 
-        db.run(
-          `
-          UPDATE users
-          SET balance = balance - ?
-          WHERE steamId = ? AND balance >= ?
-          `,
-          [ROULETTE_PRICE, steamId, ROULETTE_PRICE],
-          function (err) {
-            if (err) {
-              db.run("ROLLBACK")
-              return res.status(500).json({ error: err.message })
-            }
+          return res.status(status).json({ error: err.message })
+        }
 
-            if (this.changes === 0) {
-              db.get(
-                "SELECT balance FROM users WHERE steamId = ?",
-                [steamId],
-                (err, userRow) => {
+        const createdAt = new Date().toISOString()
+
+        db.serialize(() => {
+          db.run("BEGIN IMMEDIATE")
+
+          db.run(
+            `
+            INSERT INTO roulette_spins (steamId, createdAt)
+            VALUES (?, ?)
+            `,
+            [steamId, createdAt],
+            (err) => {
+              if (err) {
+                db.run("ROLLBACK")
+                return res.status(500).json({ error: err.message })
+              }
+
+              db.run(
+                `
+                INSERT INTO purchases (steamId, product, price, quantity, createdAt, status)
+                VALUES (?, ?, ?, ?, ?, ?)
+                `,
+                [steamId, prize.name, 0, 1, createdAt, "Приз рулетки"],
+                function (err) {
                   if (err) {
-                    console.log("Ошибка проверки баланса рулетки:", err.message)
+                    db.run("ROLLBACK")
+                    return res.status(500).json({ error: err.message })
                   }
 
-                  const balance = Number(userRow?.balance || 0)
-
-                  db.run("ROLLBACK", () => {
-                    res.status(400).json({
-                      error: "Недостаточно средств на балансе",
-                      balance
-                    })
-                  })
-                }
-              )
-              return
-            }
-
-            db.run(
-              `
-              INSERT INTO purchases (steamId, product, price, quantity, createdAt, status)
-              VALUES (?, ?, ?, ?, ?, ?)
-              `,
-              [steamId, prize.name, 0, 1, createdAt, "Приз рулетки"],
-              function (err) {
-                if (err) {
-                  db.run("ROLLBACK")
-                  return res.status(500).json({ error: err.message })
-                }
-
-                const purchase = formatPurchase({
-                  id: this.lastID,
-                  product: prize.name,
-                  price: 0,
-                  quantity: 1,
-                  status: "Приз рулетки",
-                  createdAt
-                })
-
-                db.run(
-                  `
-                  INSERT INTO payments (steamId, amount, status, type, note, createdAt)
-                  VALUES (?, ?, ?, ?, ?, ?)
-                  `,
-                  [
-                    steamId,
-                    -ROULETTE_PRICE,
-                    "paid",
-                    "roulette-spin",
-                    `${ROULETTE_PRODUCT_NAME}: ${prize.name}`,
+                  const purchase = formatPurchase({
+                    id: this.lastID,
+                    product: prize.name,
+                    price: 0,
+                    quantity: 1,
+                    status: "Приз рулетки",
                     createdAt
-                  ],
-                  function (err) {
-                    if (err) {
-                      db.run("ROLLBACK")
-                      return res.status(500).json({ error: err.message })
-                    }
+                  })
 
-                    const payment = {
-                      id: this.lastID,
-                      steamId,
-                      amount: -ROULETTE_PRICE,
-                      status: "paid",
-                      type: "roulette-spin",
-                      note: `${ROULETTE_PRODUCT_NAME}: ${prize.name}`,
-                      createdAt
-                    }
+                  db.run(
+                    `
+                    INSERT INTO roulette_drops (steamId, username, avatar, productName, productPrice, createdAt)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    `,
+                    [steamId, username, avatar, prize.name, prize.price, createdAt],
+                    function (err) {
+                      if (err) {
+                        db.run("ROLLBACK")
+                        return res.status(500).json({ error: err.message })
+                      }
 
-                    db.run(
-                      `
-                      INSERT INTO roulette_drops (steamId, username, avatar, productName, productPrice, createdAt)
-                      VALUES (?, ?, ?, ?, ?, ?)
-                      `,
-                      [steamId, username, avatar, prize.name, prize.price, createdAt],
-                      function (err) {
-                        if (err) {
-                          db.run("ROLLBACK")
-                          return res.status(500).json({ error: err.message })
-                        }
+                      const drop = {
+                        id: this.lastID,
+                        steamId,
+                        username,
+                        avatar,
+                        productName: prize.name,
+                        productPrice: prize.price,
+                        createdAt
+                      }
 
-                        const drop = {
-                          id: this.lastID,
-                          steamId,
-                          username,
-                          avatar,
-                          productName: prize.name,
-                          productPrice: prize.price,
-                          createdAt
-                        }
+                      db.get(
+                        "SELECT balance FROM users WHERE steamId = ?",
+                        [steamId],
+                        (err, userRow) => {
+                          if (err) {
+                            db.run("ROLLBACK")
+                            return res.status(500).json({ error: err.message })
+                          }
 
-                        db.get(
-                          "SELECT balance FROM users WHERE steamId = ?",
-                          [steamId],
-                          (err, userRow) => {
+                          const balance = Number(userRow?.balance || 0)
+                          const nextAvailableAt = new Date(new Date(createdAt).getTime() + ROULETTE_COOLDOWN_MS).toISOString()
+
+                          db.run("COMMIT", (err) => {
                             if (err) {
-                              db.run("ROLLBACK")
                               return res.status(500).json({ error: err.message })
                             }
 
-                            const balance = Number(userRow?.balance || 0)
+                            broadcastRouletteDrops()
+                            sendDiscordNotification(
+                              `REDMOON: ${steamId} бесплатно открыл рулетку и получил ${prize.name}`
+                            )
 
-                            db.run("COMMIT", (err) => {
-                              if (err) {
-                                return res.status(500).json({ error: err.message })
-                              }
-
-                              broadcastRouletteDrops()
-                              sendDiscordNotification(
-                                `REDMOON: ${steamId} открыл рулетку за ${formatRub(ROULETTE_PRICE)} и получил ${prize.name}`
-                              )
-
-                              res.json({
-                                success: true,
-                                cost: ROULETTE_PRICE,
-                                balance,
-                                prize: {
-                                  name: prize.name,
-                                  price: formatRub(prize.price),
-                                  priceValue: prize.price
-                                },
-                                purchase,
-                                payment,
-                                drop
-                              })
+                            res.json({
+                              success: true,
+                              cost: 0,
+                              balance,
+                              nextAvailableAt,
+                              remainingMs: ROULETTE_COOLDOWN_MS,
+                              prize: {
+                                name: prize.name,
+                                price: formatRub(prize.price),
+                                priceValue: prize.price
+                              },
+                              purchase,
+                              payment: null,
+                              drop
                             })
-                          }
-                        )
-                      }
-                    )
-                  }
-                )
-              }
-            )
-          }
-        )
+                          })
+                        }
+                      )
+                    }
+                  )
+                }
+              )
+            }
+          )
+        })
       })
     })
   })
 })
 
 app.post("/api/roulette/drops", (req, res) => {
-  res.status(410).json({ error: "Выпадение рулетки создается только через оплату прокрутки" })
+  res.status(410).json({ error: "Выпадение рулетки создается только через прокрутку" })
 })
 
 app.post("/api/deposit", paymentRateLimiter, (req, res) => {

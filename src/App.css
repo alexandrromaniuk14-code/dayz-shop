@@ -3254,6 +3254,35 @@ align-self: center;
   line-height: 1.45;
 }
 
+.admin-card-headline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.admin-card-headline h3,
+.admin-card-headline .admin-card-note {
+  margin-bottom: 0;
+}
+
+.admin-save-button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid rgba(255,59,79,0.36);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ff3b4f, #b11226);
+  color: white;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.admin-save-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .admin-product-form {
   display: grid;
   gap: 12px;
@@ -3577,6 +3606,36 @@ align-self: center;
   font-weight: 900;
 }
 
+.admin-roulette-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255,255,255,0.8);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.admin-roulette-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #ff3b4f;
+}
+
+.admin-roulette-weight {
+  width: 88px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.06);
+  color: white;
+  font-weight: 900;
+  outline: none;
+}
+
+.admin-roulette-weight:disabled {
+  opacity: 0.45;
+}
+
 @media (max-width: 900px) {
   .admin-page {
     padding: 110px 18px 48px;
@@ -3605,6 +3664,10 @@ align-self: center;
     justify-content: stretch;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .admin-card-headline {
+    flex-direction: column;
   }
 }
 

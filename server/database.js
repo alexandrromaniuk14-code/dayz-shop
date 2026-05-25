@@ -77,6 +77,23 @@ db.serialize(() => {
   `)
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS roulette_spins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      steamId TEXT,
+      createdAt TEXT
+    )
+  `)
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS roulette_items (
+      productName TEXT PRIMARY KEY,
+      isActive INTEGER DEFAULT 1,
+      weight INTEGER DEFAULT 10,
+      updatedAt TEXT
+    )
+  `)
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS promocode_redemptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       steamId TEXT,

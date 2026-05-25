@@ -26,6 +26,16 @@ const formatUsdPrice = (value, rate = FALLBACK_USD_TO_RUB_RATE) => {
 
   return `$${usdValue.toFixed(2)} USD`
 }
+const formatCooldownTime = (ms) => {
+  const safeMs = Math.max(Number(ms || 0), 0)
+  const hours = Math.floor(safeMs / 3600000)
+  const minutes = Math.ceil((safeMs % 3600000) / 60000)
+
+  if (hours <= 0) return `${Math.max(minutes, 1)} мин.`
+  if (minutes >= 60) return `${hours + 1} ч.`
+
+  return `${hours} ч. ${minutes} мин.`
+}
 
 const normalizeStoreProduct = (product) => {
   const priceValue = getNumericPrice(product.priceValue || product.price || product.oldPriceValue)
@@ -132,9 +142,9 @@ const products = [
 },
   {
     name: "Рулетка REDMOON",
-    description: "Кейс с случайным предметом из магазина",
-    price: formatRubPrice(120),
-    priceValue: 120,
+    description: "Бесплатная рулетка с случайным предметом из магазина. Доступна раз в 24 часа.",
+    price: "Бесплатно",
+    priceValue: 0,
     image: bannerImg,
     category: "Эксклюзив",
     type: "roulette",
@@ -159,7 +169,8 @@ const ROULETTE_ITEM_GAP = 16
 const ROULETTE_ITEM_STEP = ROULETTE_ITEM_WIDTH + ROULETTE_ITEM_GAP
 const ROULETTE_LANDING_INDEX = 52
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
-const ROULETTE_PRICE = 120
+const ROULETTE_PRICE = 0
+const ROULETTE_COOLDOWN_MS = 24 * 60 * 60 * 1000
 const ROULETTE_EXCLUDED_PRODUCT_NAMES = new Set([ROULETTE_PRODUCT_NAME, "VIP-слот"])
 const ADMIN_PAYMENTS_PAGE_SIZE = 25
 const API_BASE_URL = "https://dayz-shop.onrender.com"
@@ -417,7 +428,7 @@ const LEGAL_PAGES = [
         title: "1. Общие условия",
         paragraphs: [
           "Возврат средств по цифровым игровым товарам REDMOON возможен только в случаях, прямо указанных в настоящей политике. Каждое обращение рассматривается индивидуально после проверки оплаты, Steam ID, истории операций и факта выдачи товара.",
-          "Пользователь должен обратиться за возвратом в течение 72 часов с момента оплаты. Обращения, поданные позднее, могут быть отклонены, если администрация не сможет объективно проверить обстоятельства платежа и выдачи."
+          "Пользователь должен обратиться за возвратом в течение 72 часов с момента оплаты. В случае одобрения обращения возврат осуществляется в срок до 72 часов с момента принятия администрацией положительного решения, если иной срок не зависит от правил или технических ограничений платежного сервиса. Обращения, поданные позднее, могут быть отклонены, если администрация не сможет объективно проверить обстоятельства платежа и выдачи."
         ]
       },
       {
@@ -800,8 +811,14 @@ const [roulettePrize, setRoulettePrize] = useState(null)
 const [rouletteDrops, setRouletteDrops] = useState([])
 const [rouletteSettled, setRouletteSettled] = useState(false)
 const [roulettePrepared, setRoulettePrepared] = useState(false)
+const [rouletteCooldown, setRouletteCooldown] = useState({
+  allowed: true,
+  remainingMs: 0,
+  nextAvailableAt: null
+})
 const [isPurchasing, setIsPurchasing] = useState(false)
 const [customProducts, setCustomProducts] = useState([])
+const [roulettePrizeProducts, setRoulettePrizeProducts] = useState([])
 const [adminProducts, setAdminProducts] = useState([])
 const [adminUsers, setAdminUsers] = useState([])
 const [adminPurchases, setAdminPurchases] = useState([])
@@ -811,6 +828,8 @@ const [adminPaymentsTotal, setAdminPaymentsTotal] = useState(0)
 const [adminLogs, setAdminLogs] = useState([])
 const [adminPromocodes, setAdminPromocodes] = useState([])
 const [adminTopProducts, setAdminTopProducts] = useState([])
+const [adminRouletteItems, setAdminRouletteItems] = useState([])
+const [isAdminRouletteSaving, setIsAdminRouletteSaving] = useState(false)
 const [adminSummary, setAdminSummary] = useState(null)
 const [adminPaymentsTotalForm, setAdminPaymentsTotalForm] = useState("")
 const [adminTab, setAdminTab] = useState("products")
@@ -879,7 +898,7 @@ const clearAccountState = () => {
 
 const getRouletteProductImage = (item) => {
   const productName = item?.name || item?.productName
-  const matchedProduct = [...customProducts, ...products].find((product) => product.name === productName)
+  const matchedProduct = [...roulettePrizeProducts, ...customProducts, ...products].find((product) => product.name === productName)
 
   return item?.image || matchedProduct?.image || bannerImg
 }
@@ -985,6 +1004,23 @@ const loadPaymentHistoryForSteamId = (steamId) => {
     })
 }
 
+const loadRouletteStatus = () => {
+  authorizedFetch(`${API_BASE_URL}/api/roulette/status`)
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data.error) {
+        setRouletteCooldown({
+          allowed: Boolean(data.allowed),
+          remainingMs: Number(data.remainingMs || 0),
+          nextAvailableAt: data.nextAvailableAt || null
+        })
+      }
+    })
+    .catch((err) => {
+      console.log("ROULETTE STATUS ERROR:", err)
+    })
+}
+
 const loadShopProducts = () =>
   fetch(`${API_BASE_URL}/api/products`)
     .then((res) => res.json())
@@ -1000,12 +1036,27 @@ const loadShopProducts = () =>
       return []
     })
 
+const loadRoulettePrizes = () =>
+  fetch(`${API_BASE_URL}/api/roulette/prizes`)
+    .then((res) => res.json())
+    .then((items) => {
+      if (Array.isArray(items)) {
+        setRoulettePrizeProducts(items.map(normalizeStoreProduct))
+      }
+
+      return items
+    })
+    .catch((err) => {
+      console.log("ROULETTE PRIZES LOAD ERROR:", err)
+      return []
+    })
+
 const refreshProductCatalog = () =>
-  loadShopProducts()
+  Promise.all([loadShopProducts(), loadRoulettePrizes()])
 
 const hydrateRoulettePrize = (prize) => {
   const prizeName = prize?.name || prize?.productName
-  const matchedProduct = [...customProducts, ...products].find((product) => product.name === prizeName)
+  const matchedProduct = [...roulettePrizeProducts, ...customProducts, ...products].find((product) => product.name === prizeName)
   const priceValue = Number(prize?.priceValue || prize?.productPrice || matchedProduct?.priceValue || 0)
 
   return {
@@ -1030,11 +1081,8 @@ const spinRoulette = () => {
     return
   }
 
-  if (balance < ROULETTE_PRICE) {
-    showProfileNotice("Недостаточно средств для рулетки", "error")
-    setDepositAmount(ROULETTE_PRICE)
-    navigateToPage("deposit")
-    window.scrollTo({ top: 0, behavior: "smooth" })
+  if (!rouletteCooldown.allowed) {
+    showProfileNotice(`Рулетка будет доступна через ${formatCooldownTime(rouletteCooldown.remainingMs)}`, "error")
     return
   }
 
@@ -1064,11 +1112,12 @@ const spinRoulette = () => {
           pendingRouletteDropsRef.current = null
         }
 
-        if ((data.error || "").includes("Недостаточно")) {
-          setBalance(data.balance ?? balance)
-          setDepositAmount(ROULETTE_PRICE)
-          navigateToPage("deposit")
-          window.scrollTo({ top: 0, behavior: "smooth" })
+        if (data.remainingMs || data.nextAvailableAt) {
+          setRouletteCooldown({
+            allowed: false,
+            remainingMs: Number(data.remainingMs || 0),
+            nextAvailableAt: data.nextAvailableAt || null
+          })
         }
 
         return
@@ -1101,6 +1150,11 @@ const spinRoulette = () => {
         setBalance(data.balance)
         addPurchasesToHistory(data.purchase)
         addPaymentsToHistory(data.payment)
+        setRouletteCooldown({
+          allowed: false,
+          remainingMs: Number(data.remainingMs || ROULETTE_COOLDOWN_MS),
+          nextAvailableAt: data.nextAvailableAt || null
+        })
 
         if (Array.isArray(pendingRouletteDropsRef.current)) {
           setRouletteDrops(pendingRouletteDropsRef.current)
@@ -1160,6 +1214,29 @@ useEffect(() => {
 useEffect(() => {
   refreshProductCatalog()
 }, [])
+
+useEffect(() => {
+  loadRouletteStatus()
+}, [user?.id, page])
+
+useEffect(() => {
+  if (!rouletteCooldown.nextAvailableAt || rouletteCooldown.allowed) return undefined
+
+  const updateRemaining = () => {
+    const remainingMs = new Date(rouletteCooldown.nextAvailableAt).getTime() - Date.now()
+
+    setRouletteCooldown((current) => ({
+      ...current,
+      allowed: remainingMs <= 0,
+      remainingMs: Math.max(remainingMs, 0)
+    }))
+  }
+
+  updateRemaining()
+  const timer = window.setInterval(updateRemaining, 60000)
+
+  return () => window.clearInterval(timer)
+}, [rouletteCooldown.nextAvailableAt, rouletteCooldown.allowed])
 
 useEffect(() => {
   fetch("https://dayz-shop.onrender.com/api/roulette/drops")
@@ -1480,7 +1557,7 @@ const categories = [
 ]
 
 const allProducts = [...products, ...customProducts]
-const roulettePrizePool = getRoulettePrizePool(allProducts)
+const roulettePrizePool = getRoulettePrizePool(roulettePrizeProducts.length ? roulettePrizeProducts : allProducts)
 const hasRoulettePrizes = roulettePrizePool.length > 0
 
 const shopCategories = [
@@ -1534,18 +1611,22 @@ useEffect(() => {
   if (isRouletteSpinning || isRouletteOpening || rouletteSettled || roulettePrepared) return
 
   setRouletteItems(buildRouletteItems(roulettePrizePool))
-}, [customProducts, isRouletteOpening, isRouletteSpinning, rouletteSettled, roulettePrepared])
+}, [customProducts, roulettePrizeProducts, isRouletteOpening, isRouletteSpinning, rouletteSettled, roulettePrepared])
 
 const cartTotal = cart.reduce(
   (sum, item) => sum + item.priceValue * (item.quantity || 1),
   0
 )
-const hasRouletteFunds = balance >= ROULETTE_PRICE
+const hasRouletteAccess = Boolean(user?.id) && rouletteCooldown.allowed
 const adminPaymentsTotalPages = Math.max(Math.ceil(adminPaymentsTotal / ADMIN_PAYMENTS_PAGE_SIZE), 1)
 const adminPaymentsFrom = adminPaymentsTotal === 0
   ? 0
   : (adminPaymentsPage - 1) * ADMIN_PAYMENTS_PAGE_SIZE + 1
 const adminPaymentsTo = Math.min(adminPaymentsPage * ADMIN_PAYMENTS_PAGE_SIZE, adminPaymentsTotal)
+const activeRouletteWeight = adminRouletteItems.reduce(
+  (sum, item) => sum + (item.isActive ? Math.max(Number(item.weight || 0), 0) : 0),
+  0
+)
 
 const depositOptions = [
   { amount: 100 },
@@ -2050,9 +2131,10 @@ const loadAdminData = (paymentsPage = adminPaymentsPage) => {
     authorizedFetch(`${API_BASE_URL}/api/admin/payments?page=${safePaymentsPage}&limit=${ADMIN_PAYMENTS_PAGE_SIZE}`).then((res) => res.json()),
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/logs").then((res) => res.json()),
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/promocodes").then((res) => res.json()),
-    authorizedFetch("https://dayz-shop.onrender.com/api/admin/top-products").then((res) => res.json())
+    authorizedFetch("https://dayz-shop.onrender.com/api/admin/top-products").then((res) => res.json()),
+    authorizedFetch(`${API_BASE_URL}/api/admin/roulette`).then((res) => res.json())
   ])
-    .then(([summary, productsList, usersList, purchasesList, paymentsList, logsList, promocodesList, topProductsList]) => {
+    .then(([summary, productsList, usersList, purchasesList, paymentsList, logsList, promocodesList, topProductsList, rouletteSettings]) => {
       if (!summary.error) {
         setAdminSummary(summary)
         setAdminPaymentsTotalForm(String(summary.paymentsTotal ?? 0))
@@ -2071,6 +2153,7 @@ const loadAdminData = (paymentsPage = adminPaymentsPage) => {
       if (Array.isArray(logsList)) setAdminLogs(logsList)
       if (Array.isArray(promocodesList)) setAdminPromocodes(promocodesList)
       if (Array.isArray(topProductsList)) setAdminTopProducts(topProductsList)
+      if (Array.isArray(rouletteSettings?.items)) setAdminRouletteItems(rouletteSettings.items)
     })
     .catch((err) => {
       console.log("ADMIN LOAD ERROR:", err)
@@ -2084,6 +2167,60 @@ const loadAdminPaymentsPage = (nextPage) => {
 
   setAdminPaymentsPage(safePage)
   loadAdminData(safePage)
+}
+
+const updateAdminRouletteItem = (productName, patch) => {
+  setAdminRouletteItems((currentItems) =>
+    currentItems.map((item) =>
+      item.name === productName
+        ? {
+            ...item,
+            ...patch,
+            weight: patch.weight !== undefined
+              ? Math.min(Math.max(Math.floor(Number(patch.weight || 1)), 1), 1000)
+              : item.weight
+          }
+        : item
+    )
+  )
+}
+
+const saveAdminRouletteSettings = () => {
+  if (!isAdmin || isAdminRouletteSaving) return
+
+  setIsAdminRouletteSaving(true)
+
+  authorizedFetch(`${API_BASE_URL}/api/admin/roulette`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      items: adminRouletteItems.map((item) => ({
+        productName: item.name,
+        isActive: Boolean(item.isActive),
+        weight: item.weight
+      }))
+    })
+  })
+    .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showProfileNotice(data.error || "Не удалось сохранить рулетку", "error")
+        return
+      }
+
+      showProfileNotice("Настройки рулетки сохранены")
+      loadAdminData()
+      refreshProductCatalog()
+    })
+    .catch((err) => {
+      console.log("ROULETTE SETTINGS SAVE ERROR:", err)
+      showProfileNotice("Ошибка сохранения рулетки", "error")
+    })
+    .finally(() => {
+      setIsAdminRouletteSaving(false)
+    })
 }
 
 const handleAdminPaymentsTotalSubmit = (event) => {
@@ -2864,6 +3001,7 @@ paddingTop: "120px"
             ["users", "Игроки"],
             ["purchases", "Покупки"],
             ["payments", "Платежи"],
+            ["roulette", "Настройка рулетки"],
             ["top", "Топ товаров"],
             ["promocodes", "Промокоды"],
             ["logs", "Логи"]
@@ -3305,6 +3443,79 @@ paddingTop: "120px"
               >
                 Вперед
               </button>
+            </div>
+          </div>
+        )}
+
+        {adminTab === "roulette" && (
+          <div className="admin-card">
+            <div className="admin-card-headline">
+              <div>
+                <h3>Настройка рулетки</h3>
+                <p className="admin-card-note">
+                  Рулетка бесплатная для каждого Steam-аккаунта: одна попытка раз в 24 часа. Вес шанса работает относительно остальных активных товаров.
+                </p>
+              </div>
+              <button
+                className="admin-save-button"
+                type="button"
+                onClick={saveAdminRouletteSettings}
+                disabled={isAdminRouletteSaving}
+              >
+                {isAdminRouletteSaving ? "Сохраняю..." : "Сохранить"}
+              </button>
+            </div>
+
+            <div className="profile-table-wrap">
+              <table className="profile-table">
+                <thead>
+                  <tr>
+                    <th>Товар</th>
+                    <th>Цена</th>
+                    <th>Категория</th>
+                    <th>В рулетке</th>
+                    <th>Вес</th>
+                    <th>Шанс</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminRouletteItems.map((item) => {
+                    const chance = item.isActive && activeRouletteWeight > 0
+                      ? Math.round(Number(item.weight || 0) / activeRouletteWeight * 1000) / 10
+                      : 0
+
+                    return (
+                      <tr key={item.name}>
+                        <td>{item.name}</td>
+                        <td>{formatRubPrice(item.priceValue)}</td>
+                        <td>{item.category || "-"}</td>
+                        <td>
+                          <label className="admin-roulette-toggle">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(item.isActive)}
+                              onChange={(e) => updateAdminRouletteItem(item.name, { isActive: e.target.checked })}
+                            />
+                            <span>{item.isActive ? "Добавлен" : "Убран"}</span>
+                          </label>
+                        </td>
+                        <td>
+                          <input
+                            className="admin-roulette-weight"
+                            type="number"
+                            min="1"
+                            max="1000"
+                            value={item.weight || 1}
+                            onChange={(e) => updateAdminRouletteItem(item.name, { weight: e.target.value })}
+                            disabled={!item.isActive}
+                          />
+                        </td>
+                        <td>{chance}%</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -3883,7 +4094,7 @@ margin: "0 auto",
     cursor: "pointer"
   }}
 >
-  {product.type === "roulette" ? `Открыть за ${formatRubPrice(product.priceValue || product.price)}` : "Купить"}
+  {product.type === "roulette" ? "Крутить бесплатно" : "Купить"}
 </button>
     </div>
   ))}
@@ -3953,12 +4164,12 @@ margin: "0 auto",
 
       <div className="roulette-controls-row">
         <div className="roulette-cost-card">
-          <span>СТОИМОСТЬ КРУТКИ</span>
-          <strong>{formatRubPrice(ROULETTE_PRICE)}</strong>
+          <span>БЕСПЛАТНАЯ КРУТКА</span>
+          <strong>1 РАЗ В 24 ЧАСА</strong>
           <button
             className="roulette-spin-button"
             onClick={spinRoulette}
-            disabled={isRouletteSpinning || isRouletteOpening || roulettePrepared || !hasRoulettePrizes}
+            disabled={isRouletteSpinning || isRouletteOpening || roulettePrepared || !hasRoulettePrizes || (user?.id && !rouletteCooldown.allowed)}
           >
             {isRouletteOpening
               ? "ОТКРЫВАЕМ..."
@@ -3968,14 +4179,16 @@ margin: "0 auto",
                   ? "НЕТ ПРИЗОВ"
                   : !user?.id
                   ? "ВОЙТИ ЧЕРЕЗ STEAM"
-                  : hasRouletteFunds
-                    ? `КРУТИТЬ ЗА ${formatRubPrice(ROULETTE_PRICE)}`
-                    : "ПОПОЛНИТЬ БАЛАНС"}
+                  : hasRouletteAccess
+                    ? "КРУТИТЬ БЕСПЛАТНО"
+                    : `ДОСТУПНО ЧЕРЕЗ ${formatCooldownTime(rouletteCooldown.remainingMs)}`}
           </button>
           <em>
-            {hasRouletteFunds
-              ? `У вас: ${formatRubPrice(balance)}`
-              : `У вас: ${formatRubPrice(balance)}. Нужно ${formatRubPrice(ROULETTE_PRICE)}`}
+            {user?.id
+              ? rouletteCooldown.allowed
+                ? "Сегодняшняя попытка доступна"
+                : `Следующая попытка: ${rouletteCooldown.nextAvailableAt ? new Date(rouletteCooldown.nextAvailableAt).toLocaleString("ru-RU") : formatCooldownTime(rouletteCooldown.remainingMs)}`
+              : "Войдите через Steam, чтобы получить ежедневную попытку"}
           </em>
         </div>
 
