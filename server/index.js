@@ -1478,23 +1478,49 @@ app.patch("/api/admin/purchases/:id/status", requireAdmin, adminMutationRateLimi
 })
 
 app.get("/api/admin/payments", requireAdmin, (req, res) => {
-  db.all(
-    `
+  const hasPagination = req.query.page !== undefined || req.query.limit !== undefined
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1)
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100)
+  const offset = (page - 1) * limit
+
+  const paymentsSql = `
     SELECT payments.*, users.username
     FROM payments
     LEFT JOIN users ON users.steamId = payments.steamId
     ORDER BY payments.id DESC
-    LIMIT 100
-    `,
-    [],
-    (err, payments) => {
-      if (err) {
-        return res.status(500).json({ error: err.message })
-      }
+    ${hasPagination ? "LIMIT ? OFFSET ?" : "LIMIT 100"}
+  `
+  const paymentsParams = hasPagination ? [limit, offset] : []
 
-      res.json(payments)
+  db.get("SELECT COUNT(*) AS total FROM payments", [], (err, countRow) => {
+    if (err) {
+      return res.status(500).json({ error: err.message })
     }
-  )
+
+    db.all(
+      paymentsSql,
+      paymentsParams,
+      (err, payments) => {
+        if (err) {
+          return res.status(500).json({ error: err.message })
+        }
+
+        if (!hasPagination) {
+          return res.json(payments)
+        }
+
+        const total = Number(countRow?.total || 0)
+
+        res.json({
+          items: payments,
+          total,
+          page,
+          limit,
+          totalPages: Math.max(Math.ceil(total / limit), 1)
+        })
+      }
+    )
+  })
 })
 
 app.get("/api/admin/top-products", requireAdmin, (req, res) => {

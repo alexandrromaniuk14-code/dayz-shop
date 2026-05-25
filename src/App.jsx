@@ -161,6 +161,7 @@ const ROULETTE_LANDING_INDEX = 52
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 120
 const ROULETTE_EXCLUDED_PRODUCT_NAMES = new Set([ROULETTE_PRODUCT_NAME, "VIP-слот"])
+const ADMIN_PAYMENTS_PAGE_SIZE = 25
 const API_BASE_URL = "https://dayz-shop.onrender.com"
 const AUTH_TOKEN_STORAGE_KEY = "redmoonAuthToken"
 const STEAM_ID_STORAGE_KEY = "redmoonSteamId"
@@ -805,6 +806,8 @@ const [adminProducts, setAdminProducts] = useState([])
 const [adminUsers, setAdminUsers] = useState([])
 const [adminPurchases, setAdminPurchases] = useState([])
 const [adminPayments, setAdminPayments] = useState([])
+const [adminPaymentsPage, setAdminPaymentsPage] = useState(1)
+const [adminPaymentsTotal, setAdminPaymentsTotal] = useState(0)
 const [adminLogs, setAdminLogs] = useState([])
 const [adminPromocodes, setAdminPromocodes] = useState([])
 const [adminTopProducts, setAdminTopProducts] = useState([])
@@ -849,6 +852,8 @@ const [isAdminImageDragging, setIsAdminImageDragging] = useState(false)
 const rouletteViewportRef = useRef(null)
 const spinStartTimerRef = useRef(null)
 const spinResultTimerRef = useRef(null)
+const hideRouletteDropsRef = useRef(false)
+const pendingRouletteDropsRef = useRef(null)
 
 const navigateToPage = (nextPage) => {
   const nextPath = nextPage === "help" ? HELP_PAGE_PATH : LEGAL_PATH_BY_PAGE_ID[nextPage] || "/"
@@ -1034,6 +1039,8 @@ const spinRoulette = () => {
   }
 
   setIsRouletteOpening(true)
+  hideRouletteDropsRef.current = true
+  pendingRouletteDropsRef.current = null
 
   authorizedFetch(`${API_BASE_URL}/api/roulette/spin`, {
     method: "POST",
@@ -1050,6 +1057,12 @@ const spinRoulette = () => {
     .then(({ ok, data }) => {
       if (!ok) {
         showProfileNotice(data.error || "Не удалось открыть рулетку", "error")
+        hideRouletteDropsRef.current = false
+
+        if (Array.isArray(pendingRouletteDropsRef.current)) {
+          setRouletteDrops(pendingRouletteDropsRef.current)
+          pendingRouletteDropsRef.current = null
+        }
 
         if ((data.error || "").includes("Недостаточно")) {
           setBalance(data.balance ?? balance)
@@ -1071,17 +1084,6 @@ const spinRoulette = () => {
       clearTimeout(spinStartTimerRef.current)
       clearTimeout(spinResultTimerRef.current)
 
-      setBalance(data.balance)
-      addPurchasesToHistory(data.purchase)
-      addPaymentsToHistory(data.payment)
-
-      if (data.drop?.id) {
-        setRouletteDrops((currentDrops) => [
-          data.drop,
-          ...currentDrops.filter((item) => item.id !== data.drop.id)
-        ].slice(0, 7))
-      }
-
       setRoulettePrize(null)
       setRouletteSettled(false)
       setRoulettePrepared(true)
@@ -1095,6 +1097,21 @@ const spinRoulette = () => {
       }, 80)
 
       spinResultTimerRef.current = setTimeout(() => {
+        hideRouletteDropsRef.current = false
+        setBalance(data.balance)
+        addPurchasesToHistory(data.purchase)
+        addPaymentsToHistory(data.payment)
+
+        if (Array.isArray(pendingRouletteDropsRef.current)) {
+          setRouletteDrops(pendingRouletteDropsRef.current)
+          pendingRouletteDropsRef.current = null
+        } else if (data.drop?.id) {
+          setRouletteDrops((currentDrops) => [
+            data.drop,
+            ...currentDrops.filter((item) => item.id !== data.drop.id)
+          ].slice(0, 7))
+        }
+
         setIsRouletteSpinning(false)
         setRoulettePrize(prize)
         setRouletteSettled(true)
@@ -1104,6 +1121,13 @@ const spinRoulette = () => {
     })
     .catch((err) => {
       console.log("ROULETTE SPIN ERROR:", err)
+      hideRouletteDropsRef.current = false
+
+      if (Array.isArray(pendingRouletteDropsRef.current)) {
+        setRouletteDrops(pendingRouletteDropsRef.current)
+        pendingRouletteDropsRef.current = null
+      }
+
       showProfileNotice("Ошибка при открытии рулетки", "error")
     })
     .finally(() => {
@@ -1158,6 +1182,11 @@ useEffect(() => {
       const drops = JSON.parse(event.data)
 
       if (Array.isArray(drops)) {
+        if (hideRouletteDropsRef.current) {
+          pendingRouletteDropsRef.current = drops
+          return
+        }
+
         setRouletteDrops(drops)
       }
     } catch (err) {
@@ -1512,6 +1541,11 @@ const cartTotal = cart.reduce(
   0
 )
 const hasRouletteFunds = balance >= ROULETTE_PRICE
+const adminPaymentsTotalPages = Math.max(Math.ceil(adminPaymentsTotal / ADMIN_PAYMENTS_PAGE_SIZE), 1)
+const adminPaymentsFrom = adminPaymentsTotal === 0
+  ? 0
+  : (adminPaymentsPage - 1) * ADMIN_PAYMENTS_PAGE_SIZE + 1
+const adminPaymentsTo = Math.min(adminPaymentsPage * ADMIN_PAYMENTS_PAGE_SIZE, adminPaymentsTotal)
 
 const depositOptions = [
   { amount: 100 },
@@ -2003,15 +2037,17 @@ const handleCartCheckout = () => {
     })
 }
 
-const loadAdminData = () => {
+const loadAdminData = (paymentsPage = adminPaymentsPage) => {
   if (!isAdmin) return
+
+  const safePaymentsPage = Math.max(Number(paymentsPage) || 1, 1)
 
   Promise.all([
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/summary").then((res) => res.json()),
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/products").then((res) => res.json()),
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/users").then((res) => res.json()),
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/purchases").then((res) => res.json()),
-    authorizedFetch("https://dayz-shop.onrender.com/api/admin/payments").then((res) => res.json()),
+    authorizedFetch(`${API_BASE_URL}/api/admin/payments?page=${safePaymentsPage}&limit=${ADMIN_PAYMENTS_PAGE_SIZE}`).then((res) => res.json()),
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/logs").then((res) => res.json()),
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/promocodes").then((res) => res.json()),
     authorizedFetch("https://dayz-shop.onrender.com/api/admin/top-products").then((res) => res.json())
@@ -2024,7 +2060,14 @@ const loadAdminData = () => {
       if (Array.isArray(productsList)) setAdminProducts(productsList)
       if (Array.isArray(usersList)) setAdminUsers(usersList)
       if (Array.isArray(purchasesList)) setAdminPurchases(purchasesList)
-      if (Array.isArray(paymentsList)) setAdminPayments(paymentsList)
+      if (Array.isArray(paymentsList)) {
+        setAdminPayments(paymentsList)
+        setAdminPaymentsTotal(paymentsList.length)
+      } else if (Array.isArray(paymentsList?.items)) {
+        setAdminPayments(paymentsList.items)
+        setAdminPaymentsPage(Number(paymentsList.page) || safePaymentsPage)
+        setAdminPaymentsTotal(Number(paymentsList.total) || paymentsList.items.length)
+      }
       if (Array.isArray(logsList)) setAdminLogs(logsList)
       if (Array.isArray(promocodesList)) setAdminPromocodes(promocodesList)
       if (Array.isArray(topProductsList)) setAdminTopProducts(topProductsList)
@@ -2033,6 +2076,14 @@ const loadAdminData = () => {
       console.log("ADMIN LOAD ERROR:", err)
       showProfileNotice("Не удалось загрузить админ-панель", "error")
     })
+}
+
+const loadAdminPaymentsPage = (nextPage) => {
+  const totalPages = Math.max(Math.ceil(adminPaymentsTotal / ADMIN_PAYMENTS_PAGE_SIZE), 1)
+  const safePage = Math.min(Math.max(Number(nextPage) || 1, 1), totalPages)
+
+  setAdminPaymentsPage(safePage)
+  loadAdminData(safePage)
 }
 
 const handleAdminPaymentsTotalSubmit = (event) => {
@@ -3088,6 +3139,9 @@ paddingTop: "120px"
 
             <div className="admin-card">
               <h3>Последние платежи</h3>
+              <p className="admin-card-note">
+                Показаны свежие записи. Полная история доступна во вкладке «Платежи».
+              </p>
               <div className="profile-table-wrap">
                 <table className="profile-table">
                   <thead>
@@ -3098,6 +3152,7 @@ paddingTop: "120px"
                       <th>Тип</th>
                       <th>Комментарий</th>
                       <th>Статус</th>
+                      <th>Дата</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3109,6 +3164,7 @@ paddingTop: "120px"
                         <td>{item.type || "payment"}</td>
                         <td>{item.note || "-"}</td>
                         <td>{item.status}</td>
+                        <td>{item.createdAt ? new Date(item.createdAt).toLocaleString("ru-RU") : "-"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -3198,6 +3254,9 @@ paddingTop: "120px"
         {adminTab === "payments" && (
           <div className="admin-card">
             <h3>Платежи</h3>
+            <p className="admin-card-note">
+              История хранится полностью. Сейчас показано {adminPaymentsFrom}-{adminPaymentsTo} из {adminPaymentsTotal}.
+            </p>
             <div className="profile-table-wrap">
               <table className="profile-table">
                 <thead>
@@ -3209,6 +3268,7 @@ paddingTop: "120px"
                     <th>Тип</th>
                     <th>Комментарий</th>
                     <th>Статус</th>
+                    <th>Дата</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3221,10 +3281,30 @@ paddingTop: "120px"
                       <td>{item.type || "payment"}</td>
                       <td>{item.note || "-"}</td>
                       <td>{item.status}</td>
+                      <td>{item.createdAt ? new Date(item.createdAt).toLocaleString("ru-RU") : "-"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="admin-pagination">
+              <button
+                type="button"
+                onClick={() => loadAdminPaymentsPage(adminPaymentsPage - 1)}
+                disabled={adminPaymentsPage <= 1}
+              >
+                Назад
+              </button>
+              <span>
+                Страница {adminPaymentsPage} из {adminPaymentsTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => loadAdminPaymentsPage(adminPaymentsPage + 1)}
+                disabled={adminPaymentsPage >= adminPaymentsTotalPages}
+              >
+                Вперед
+              </button>
             </div>
           </div>
         )}
