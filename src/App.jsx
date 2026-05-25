@@ -3809,18 +3809,6 @@ margin: "0 auto",
   ))}
 
 </div>
-<a
-  className="freekassa-verify-banner"
-  href="https://freekassa.net"
-  target="_blank"
-  rel="noopener noreferrer"
->
-  <img
-    src="https://cdn.freekassa.net/banners/big-white-1.png"
-    title="Прием платежей на сайте"
-    alt="Прием платежей на сайте"
-  />
-</a>
       </main>
       )}
       {page === "roulette" && (
