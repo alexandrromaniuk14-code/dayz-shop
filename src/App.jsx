@@ -1572,7 +1572,9 @@ const adminSearchValue = adminSearch.trim().toLowerCase()
 const adminPurchaseStatusOptions = [
   { id: "all", label: "Все" },
   { id: "Ожидает выдачи", label: "Ожидает выдачи" },
+  { id: "Выдача в игре", label: "Выдача в игре" },
   { id: "Выдано", label: "Выдано" },
+  { id: "Ошибка выдачи", label: "Ошибка выдачи" },
   { id: "Отменено", label: "Отменено" }
 ]
 const filteredAdminUsers = adminUsers.filter((item) =>
@@ -3377,7 +3379,9 @@ paddingTop: "120px"
                           onChange={(e) => updatePurchaseStatus(item.id, e.target.value)}
                         >
                           <option value="Ожидает выдачи">Ожидает</option>
+                          <option value="Выдача в игре">Выдача в игре</option>
                           <option value="Выдано">Выдано</option>
+                          <option value="Ошибка выдачи">Ошибка выдачи</option>
                           <option value="Отменено">Отменено</option>
                         </select>
                       </td>

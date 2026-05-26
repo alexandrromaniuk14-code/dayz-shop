@@ -21,6 +21,7 @@ const FREEKASSA_MERCHANT_ID = process.env.FREEKASSA_MERCHANT_ID || ""
 const FREEKASSA_SECRET_1 = process.env.FREEKASSA_SECRET_1 || ""
 const FREEKASSA_SECRET_2 = process.env.FREEKASSA_SECRET_2 || ""
 const FREEKASSA_CURRENCY = process.env.FREEKASSA_CURRENCY || "RUB"
+const GAME_SERVER_TOKEN = process.env.REDMOON_GAME_SERVER_TOKEN || ""
 const ENABLE_TEST_PAYMENTS = process.env.ENABLE_TEST_PAYMENTS === "1"
 const DEFAULT_USD_TO_RUB_RATE = Number(process.env.DEFAULT_USD_TO_RUB_RATE || 71.209)
 const EXCHANGE_RATE_CACHE_TTL_MS = 1000 * 60 * 60 * 3
@@ -69,6 +70,43 @@ const productCatalog = {
   [ROULETTE_PRODUCT_NAME]: ROULETTE_PRICE,
   "VIP-слот": 500
 }
+
+const productNames = Object.keys(productCatalog)
+const productDeliveryCatalog = {
+  [productNames[0]]: {
+    type: "vehicle",
+    className: "Hatchback_02",
+    attachments: [
+      { className: "Hatchback_02_Wheel", quantity: 4 },
+      { className: "Hatchback_02_Door_1_1", quantity: 1 },
+      { className: "Hatchback_02_Door_1_2", quantity: 1 },
+      { className: "Hatchback_02_Door_2_1", quantity: 1 },
+      { className: "Hatchback_02_Door_2_2", quantity: 1 },
+      { className: "Hatchback_02_Hood", quantity: 1 },
+      { className: "Hatchback_02_Trunk", quantity: 1 },
+      { className: "CarBattery", quantity: 1 },
+      { className: "SparkPlug", quantity: 1 },
+      { className: "HeadlightH7", quantity: 2 }
+    ]
+  },
+  [productNames[1]]: { type: "item", className: "SledgeHammer" },
+  [productNames[2]]: { type: "item", className: "NailBox" },
+  [productNames[3]]: { type: "item", className: "Pliers" },
+  [productNames[4]]: { type: "item", className: "Rope" },
+  [productNames[5]]: { type: "item", className: "MetalWire" },
+  [productNames[6]]: { type: "item", className: "Shovel" },
+  [productNames[7]]: { type: "item", className: "BM_BuildingBag" },
+  [productNames[8]]: { type: "item", className: "MetalPlate", quantity: 10 },
+  [productNames[9]]: { type: "item", className: "Barrel_Green" },
+  [productNames[10]]: { type: "item", className: "Hatchet" },
+  [productNames[11]]: { type: "item", className: "Pickaxe" },
+  [productNames[12]]: { type: "item", className: "TerritoryFlagKit" },
+  [ROULETTE_PRODUCT_NAME]: { type: "service", className: "" },
+  [productNames[14]]: { type: "service", className: "" }
+}
+const gameDeliveryProductNames = Object.entries(productDeliveryCatalog)
+  .filter(([, delivery]) => delivery?.type && delivery.type !== "service")
+  .map(([productName]) => productName)
 
 fs.mkdirSync(uploadsDir, { recursive: true })
 
@@ -275,6 +313,27 @@ const getAdminTargetSteamId = (req) =>
 const requireAdmin = (req, res, next) => {
   if (!isAdminRequest(req)) {
     return res.status(403).json({ error: "Доступ только для администратора" })
+  }
+
+  next()
+}
+
+const getGameTokenFromRequest = (req) =>
+  String(req.get("x-redmoon-token") || req.query.token || "").trim()
+
+const isMatchingSecret = (actual, expected) => {
+  if (!actual || !expected || actual.length !== expected.length) return false
+
+  return crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
+}
+
+const requireGameServer = (req, res, next) => {
+  if (!GAME_SERVER_TOKEN) {
+    return res.status(503).json({ error: "REDMOON_GAME_SERVER_TOKEN is not configured" })
+  }
+
+  if (!isMatchingSecret(getGameTokenFromRequest(req), GAME_SERVER_TOKEN)) {
+    return res.status(403).json({ error: "Forbidden" })
   }
 
   next()
@@ -491,6 +550,36 @@ const formatProduct = (product) => ({
   createdAt: product.createdAt,
   updatedAt: product.updatedAt
 })
+
+const getDeliveryForProduct = (productName) => {
+  const delivery = productDeliveryCatalog[productName]
+
+  if (!delivery || delivery.type === "service") return null
+
+  return delivery
+}
+
+const formatGamePurchase = (purchase) => {
+  const delivery = getDeliveryForProduct(purchase.product)
+
+  if (!delivery) return null
+
+  const purchaseQuantity = Math.max(Number(purchase.quantity || 1), 1)
+  const deliveryQuantity = Math.max(Number(delivery.quantity || 1), 1)
+
+  return {
+    id: purchase.id,
+    name: purchase.product,
+    description: "",
+    type: delivery.type,
+    status: purchase.status === "Приз рулетки" ? "Ожидает выдачи" : purchase.status,
+    className: delivery.className || "",
+    quantity: deliveryQuantity * purchaseQuantity,
+    stack: Number(delivery.stack || 0),
+    liquid: Number(delivery.liquid || 0),
+    attachments: Array.isArray(delivery.attachments) ? delivery.attachments : []
+  }
+}
 
 const getProductPrice = (productName, callback) => {
   if (productName === ROULETTE_PRODUCT_NAME) {
@@ -1654,7 +1743,7 @@ app.get("/api/admin/purchases", requireAdmin, (req, res) => {
 app.patch("/api/admin/purchases/:id/status", requireAdmin, adminMutationRateLimiter, (req, res) => {
   const id = req.params.id
   const status = String(req.body.status || "").trim()
-  const allowedStatuses = ["Ожидает выдачи", "Выдано", "Отменено"]
+  const allowedStatuses = ["Ожидает выдачи", "Выдача в игре", "Выдано", "Ошибка выдачи", "Отменено", "Приз рулетки"]
 
   if (!allowedStatuses.includes(status)) {
     return res.status(400).json({ error: "Некорректный статус покупки" })
@@ -1674,6 +1763,139 @@ app.patch("/api/admin/purchases/:id/status", requireAdmin, adminMutationRateLimi
 
       writeAdminLog(req, "purchase_status", `purchase:${id}`, status)
       res.json({ success: true, id, status })
+    }
+  )
+})
+
+app.get("/api/game/purchases", requireGameServer, (req, res) => {
+  const steamId = String(req.query.steamId || "").trim()
+
+  if (!steamId) {
+    return res.status(400).json({ error: "steamId is required" })
+  }
+
+  if (gameDeliveryProductNames.length === 0) {
+    return res.json({ items: [] })
+  }
+
+  db.all(
+    `
+    SELECT *
+    FROM purchases
+    WHERE steamId = ?
+      AND status IN ('Ожидает выдачи', 'Приз рулетки', 'Ошибка выдачи')
+      AND product IN (${gameDeliveryProductNames.map(() => "?").join(",")})
+    ORDER BY id ASC
+    `,
+    [steamId, ...gameDeliveryProductNames],
+    (err, purchases) => {
+      if (err) {
+        return res.status(500).json({ error: err.message })
+      }
+
+      const items = purchases
+        .map(formatGamePurchase)
+        .filter(Boolean)
+
+      res.json({ items })
+    }
+  )
+})
+
+app.get("/api/game/claim/start", requireGameServer, (req, res) => {
+  const steamId = String(req.query.steamId || "").trim()
+  const purchaseId = Number(req.query.purchaseId || 0)
+
+  if (!steamId || !Number.isInteger(purchaseId) || purchaseId <= 0) {
+    return res.status(400).json({ error: "steamId and purchaseId are required" })
+  }
+
+  const updatedAt = new Date().toISOString()
+
+  if (gameDeliveryProductNames.length === 0) {
+    return res.status(409).json({ error: "No delivery mapping configured" })
+  }
+
+  db.run(
+    `
+    UPDATE purchases
+    SET status = ?, updatedAt = ?
+    WHERE id = ?
+      AND steamId = ?
+      AND status IN ('Ожидает выдачи', 'Приз рулетки', 'Ошибка выдачи')
+      AND product IN (${gameDeliveryProductNames.map(() => "?").join(",")})
+    `,
+    ["Выдача в игре", updatedAt, purchaseId, steamId, ...gameDeliveryProductNames],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: err.message })
+      }
+
+      if (this.changes === 0) {
+        return res.status(409).json({ error: "Purchase is not available for claim" })
+      }
+
+      db.get(
+        "SELECT * FROM purchases WHERE id = ? AND steamId = ?",
+        [purchaseId, steamId],
+        (err, purchase) => {
+          if (err) {
+            return res.status(500).json({ error: err.message })
+          }
+
+          const item = formatGamePurchase({
+            ...purchase,
+            status: "Ожидает выдачи"
+          })
+
+          if (!item) {
+            return res.status(409).json({ error: "Purchase has no delivery mapping" })
+          }
+
+          res.json({
+            claimId: `${purchaseId}-${Date.now()}`,
+            item
+          })
+        }
+      )
+    }
+  )
+})
+
+app.get("/api/game/claim/finish", requireGameServer, (req, res) => {
+  const steamId = String(req.query.steamId || "").trim()
+  const claimId = String(req.query.claimId || "").trim()
+  const status = String(req.query.status || "").trim()
+  const purchaseId = Number(claimId.split("-")[0] || 0)
+  const nextStatus = status === "success" ? "Выдано" : status === "error" ? "Ошибка выдачи" : ""
+
+  if (!steamId || !claimId || !Number.isInteger(purchaseId) || purchaseId <= 0 || !nextStatus) {
+    return res.status(400).json({ error: "steamId, claimId and status=success|error are required" })
+  }
+
+  db.run(
+    `
+    UPDATE purchases
+    SET status = ?, updatedAt = ?
+    WHERE id = ?
+      AND steamId = ?
+      AND status = 'Выдача в игре'
+    `,
+    [nextStatus, new Date().toISOString(), purchaseId, steamId],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: err.message })
+      }
+
+      if (this.changes === 0) {
+        return res.status(409).json({ error: "Claim is not active" })
+      }
+
+      res.json({
+        success: true,
+        purchaseId,
+        status: nextStatus
+      })
     }
   )
 })
@@ -2271,7 +2493,7 @@ app.post("/api/purchase", purchaseRateLimiter, (req, res) => {
                   INSERT INTO purchases (steamId, product, price, quantity, createdAt, status)
                   VALUES (?, ?, ?, ?, ?, ?)
                   `,
-                  [currentSteamId, productName, productPrice, 1, createdAt, "Выдано"],
+                  [currentSteamId, productName, productPrice, 1, createdAt, "Ожидает выдачи"],
                   function (err) {
                     if (err) {
                       return res.status(500).json({ error: err.message })
@@ -2282,6 +2504,7 @@ app.post("/api/purchase", purchaseRateLimiter, (req, res) => {
                       product: productName,
                       price: productPrice,
                       quantity: 1,
+                      status: "Ожидает выдачи",
                       createdAt
                     })
 
@@ -2406,7 +2629,7 @@ app.post("/api/purchase/cart", purchaseRateLimiter, (req, res) => {
                     INSERT INTO purchases (steamId, product, price, quantity, createdAt, status)
                     VALUES (?, ?, ?, ?, ?, ?)
                     `,
-                    [currentSteamId, item.productName, item.price, item.quantity, createdAt, "Выдано"],
+                    [currentSteamId, item.productName, item.price, item.quantity, createdAt, "Ожидает выдачи"],
                     function (err) {
                       if (err) {
                         db.run("ROLLBACK")
@@ -2418,6 +2641,7 @@ app.post("/api/purchase/cart", purchaseRateLimiter, (req, res) => {
                         product: item.productName,
                         price: item.price,
                         quantity: item.quantity,
+                        status: "Ожидает выдачи",
                         createdAt
                       }))
 
