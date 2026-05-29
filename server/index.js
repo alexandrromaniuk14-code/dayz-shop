@@ -14,6 +14,7 @@ const app = express()
 
 app.set("trust proxy", 1)
 const FRONTEND_URL = "https://redmoon-dayz.ru"
+const BACKEND_PUBLIC_URL = (process.env.BACKEND_PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || "https://dayz-shop.onrender.com").replace(/\/+$/, "")
 const ADMIN_STEAM_IDS = new Set(["76561198722502186"])
 const AUTH_TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET || process.env.SESSION_SECRET || "redmoon_auth_secret"
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || ""
@@ -25,7 +26,10 @@ const GAME_SERVER_TOKEN = process.env.REDMOON_GAME_SERVER_TOKEN || ""
 const ENABLE_TEST_PAYMENTS = process.env.ENABLE_TEST_PAYMENTS === "1"
 const DEFAULT_USD_TO_RUB_RATE = Number(process.env.DEFAULT_USD_TO_RUB_RATE || 71.209)
 const EXCHANGE_RATE_CACHE_TTL_MS = 1000 * 60 * 60 * 3
-const uploadsDir = path.join(__dirname, "uploads")
+const legacyUploadsDir = path.join(__dirname, "uploads")
+const renderDiskDir = "/var/data"
+const defaultPersistentDir = fs.existsSync(renderDiskDir) ? renderDiskDir : __dirname
+const uploadsDir = process.env.UPLOADS_DIR || path.join(defaultPersistentDir, "uploads")
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 0
@@ -110,6 +114,17 @@ const gameDeliveryProductNames = Object.entries(productDeliveryCatalog)
 
 fs.mkdirSync(uploadsDir, { recursive: true })
 
+if (uploadsDir !== legacyUploadsDir && fs.existsSync(legacyUploadsDir)) {
+  fs.readdirSync(legacyUploadsDir).forEach((filename) => {
+    const source = path.join(legacyUploadsDir, filename)
+    const target = path.join(uploadsDir, filename)
+
+    if (fs.statSync(source).isFile() && !fs.existsSync(target)) {
+      fs.copyFileSync(source, target)
+    }
+  })
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, callback) => {
     callback(null, uploadsDir)
@@ -135,7 +150,23 @@ const upload = multer({
   }
 })
 
-const getImageUrl = (file) => file ? `https://redmoon-dayz.ru/uploads/${file.filename}` : null
+const normalizeProductImageUrl = (image) => {
+  const value = String(image || "").trim()
+
+  if (!value) return ""
+
+  if (value.startsWith(`${FRONTEND_URL}/uploads/`)) {
+    return `${BACKEND_PUBLIC_URL}${value.slice(FRONTEND_URL.length)}`
+  }
+
+  if (value.startsWith("/uploads/")) {
+    return `${BACKEND_PUBLIC_URL}${value}`
+  }
+
+  return value
+}
+
+const getImageUrl = (file) => file ? `${BACKEND_PUBLIC_URL}/uploads/${file.filename}` : null
 
 const requestText = (url) =>
   new Promise((resolve, reject) => {
@@ -544,7 +575,7 @@ const formatProduct = (product) => ({
   discountPercent: Number(product.discountPercent || 0),
   price: formatRub(getDiscountedPrice(product.price, product.discountPercent)),
   priceValue: getDiscountedPrice(product.price, product.discountPercent),
-  image: product.image,
+  image: normalizeProductImageUrl(product.image),
   isActive: Boolean(product.isActive),
   sortOrder: Number(product.sortOrder || 0),
   createdAt: product.createdAt,
@@ -1370,7 +1401,7 @@ app.get("/api/admin/roulette", requireAdmin, (req, res) => {
           price: formatRub(item.priceValue),
           priceValue: item.priceValue,
           category: product.category || "Все для строительства",
-          image: product.image,
+          image: normalizeProductImageUrl(product.image),
           isActive: item.isRouletteActive,
           weight: item.rouletteWeight
         }

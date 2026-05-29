@@ -18,6 +18,9 @@ server/*.db-*
 server/*.sqlite
 server/*.sqlite-*
 
+# Runtime product uploads are stored by the backend.
+server/uploads/*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
