@@ -514,9 +514,9 @@ const LEGAL_PAGES = [
         ]
       },
       {
-        title: "3. Оплата РФ / РБ: FreeKassa, PayPalych",
+        title: "3. Оплата РФ / РБ: FreeKassa, ENOT, PayPalych",
         paragraphs: [
-          "Для пользователей, которым доступны способы оплаты РФ / РБ, на сайте могут использоваться FreeKassa и PayPalych. Текущий активный способ оплаты отображается на странице пополнения баланса.",
+          "Для пользователей, которым доступны способы оплаты РФ / РБ, на сайте могут использоваться FreeKassa, ENOT и PayPalych. Текущий активный способ оплаты отображается на странице пополнения баланса.",
           "После успешного подтверждения платежа платежным агрегатором баланс на сайте начисляется автоматически. Если зачисление не произошло, пользователь должен обратиться в поддержку."
         ]
       },
@@ -786,8 +786,9 @@ function App() {
   const [balance, setBalance] = useState(0) 
   const [paymentSuccess, setPaymentSuccess] = useState(false)
   const [page, setPage] = useState(getPageFromCurrentPath)
-  const [depositAmount, setDepositAmount] = useState("")
+const [depositAmount, setDepositAmount] = useState("")
   const [openPaymentRegion, setOpenPaymentRegion] = useState("local")
+const [selectedDepositProvider, setSelectedDepositProvider] = useState("freekassa")
 const [depositEmail, setDepositEmail] = useState("")
 const [isDepositSubmitting, setIsDepositSubmitting] = useState(false)
 const [cart, setCart] = useState([])
@@ -1640,6 +1641,7 @@ const depositOptions = [
 const depositValue = Math.floor(Number(depositAmount || 0))
 const depositBonus = getDepositBonus(depositValue)
 const depositTotal = depositValue + depositBonus
+const selectedDepositProviderName = selectedDepositProvider === "enot" ? "ENOT" : "FreeKassa"
 
 const profileMenu = [
   { id: "info", label: "Информация" },
@@ -1797,7 +1799,8 @@ const handleDepositPayment = () => {
     },
     body: JSON.stringify({
       amount: depositValue,
-      email: depositEmail.trim()
+      email: depositEmail.trim(),
+      provider: selectedDepositProvider
     })
   })
     .then((res) =>
@@ -2976,7 +2979,7 @@ paddingTop: "120px"
             <em>
               {adminSummary?.paymentsTotalMode === "manual"
                 ? `Задано вручную · авто ${formatRubPrice(adminSummary?.paymentsActualTotal ?? 0)}`
-                : "Авто: только реальные FreeKassa"}
+                : "Авто: реальные платежи"}
             </em>
             <form className="admin-stat-edit-form" onSubmit={handleAdminPaymentsTotalSubmit}>
               <input
@@ -4246,7 +4249,7 @@ margin: "0 auto",
         <div className="deposit-heading">
           <span>REDMOON BALANCE</span>
           <h2>Пополнение баланса</h2>
-          <p>Выберите сумму, укажите email и выберите подходящий способ оплаты. Баланс начислится автоматически после подтверждения платежа FreeKassa.</p>
+          <p>Выберите сумму, укажите email и подходящий способ оплаты. Баланс начислится автоматически после подтверждения платежа.</p>
           {pendingPurchaseIntent && (
             <button
               className="profile-inline-button"
@@ -4270,17 +4273,29 @@ margin: "0 auto",
                 onClick={() => setOpenPaymentRegion((current) => current === "local" ? "" : "local")}
               >
                 <span className="payment-region-title">РФ / РБ 🇷🇺 🇧🇾</span>
-                <span className="payment-region-meta">FreeKassa, PayPalych</span>
+                <span className="payment-region-meta">FreeKassa, ENOT, PayPalych</span>
                 <span className="payment-region-chevron" aria-hidden="true">⌄</span>
               </button>
 
               <div className="payment-region-panel">
                 <div className="deposit-method-grid">
-                  <button className="deposit-method-card active" type="button">
+                  <button
+                    className={selectedDepositProvider === "freekassa" ? "deposit-method-card active" : "deposit-method-card"}
+                    type="button"
+                    onClick={() => setSelectedDepositProvider("freekassa")}
+                  >
                     <img
                       src="https://cdn.freekassa.net/banners/big-white-1.png"
                       alt="FreeKassa"
                     />
+                  </button>
+                  <button
+                    className={selectedDepositProvider === "enot" ? "deposit-method-card enot-method-card active" : "deposit-method-card enot-method-card"}
+                    type="button"
+                    onClick={() => setSelectedDepositProvider("enot")}
+                  >
+                    <strong>enot.io</strong>
+                    <small>Быстрая оплата</small>
                   </button>
                   <button className="deposit-method-card disabled" type="button" disabled>
                     <strong>PAYPALYCH</strong>
@@ -4410,7 +4425,7 @@ margin: "0 auto",
                 onClick={handleDepositPayment}
                 disabled={isDepositSubmitting}
               >
-                {isDepositSubmitting ? "Создаем платеж..." : "Перейти к оплате"}
+                {isDepositSubmitting ? "Создаем платеж..." : `Оплатить через ${selectedDepositProviderName}`}
               </button>
 
               <button

@@ -22,6 +22,10 @@ const FREEKASSA_MERCHANT_ID = process.env.FREEKASSA_MERCHANT_ID || ""
 const FREEKASSA_SECRET_1 = process.env.FREEKASSA_SECRET_1 || ""
 const FREEKASSA_SECRET_2 = process.env.FREEKASSA_SECRET_2 || ""
 const FREEKASSA_CURRENCY = process.env.FREEKASSA_CURRENCY || "RUB"
+const ENOT_SHOP_ID = process.env.ENOT_SHOP_ID || ""
+const ENOT_API_KEY = process.env.ENOT_API_KEY || process.env.ENOT_SECRET_KEY || ""
+const ENOT_WEBHOOK_SECRET = process.env.ENOT_WEBHOOK_SECRET || process.env.ENOT_ADDITIONAL_KEY || ""
+const ENOT_CURRENCY = process.env.ENOT_CURRENCY || "RUB"
 const GAME_SERVER_TOKEN = process.env.REDMOON_GAME_SERVER_TOKEN || ""
 const ENABLE_TEST_PAYMENTS = process.env.ENABLE_TEST_PAYMENTS === "1"
 const DEFAULT_USD_TO_RUB_RATE = Number(process.env.DEFAULT_USD_TO_RUB_RATE || 71.209)
@@ -476,6 +480,36 @@ const sendDiscordNotification = (content) => {
 const createHash = (value, algorithm = "md5") =>
   crypto.createHash(algorithm).update(String(value)).digest("hex")
 
+const sortObjectKeys = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(sortObjectKeys)
+  }
+
+  if (value && typeof value === "object") {
+    return Object.keys(value).sort().reduce((result, key) => {
+      result[key] = sortObjectKeys(value[key])
+      return result
+    }, {})
+  }
+
+  return value
+}
+
+const createHmacSha256 = (value, secret) =>
+  crypto.createHmac("sha256", String(secret)).update(String(value), "utf8").digest("hex")
+
+const stringifyJsonWithSpaces = (value) => {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value)
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(stringifyJsonWithSpaces).join(", ")}]`
+  }
+
+  return `{${Object.keys(value).map((key) => `${JSON.stringify(key)}: ${stringifyJsonWithSpaces(value[key])}`).join(", ")}}`
+}
+
 const toMoneyAmount = (value) => {
   const normalized = Number(String(value || "").replace(",", "."))
 
@@ -537,6 +571,59 @@ const verifyFreeKassaSignature = (payload) => {
   }
 
   return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))
+}
+
+const createEnotInvoice = async ({ paymentId, amount, email, steamId, creditedAmount }) => {
+  const response = await fetch("https://api.enot.io/invoice/create", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "x-api-key": ENOT_API_KEY
+    },
+    body: JSON.stringify({
+      amount: toMoneyAmount(amount),
+      order_id: String(paymentId),
+      email,
+      currency: ENOT_CURRENCY,
+      shop_id: ENOT_SHOP_ID,
+      hook_url: `${BACKEND_PUBLIC_URL}/api/enot/notify`,
+      success_url: `${BACKEND_PUBLIC_URL}/api/enot/success`,
+      fail_url: `${BACKEND_PUBLIC_URL}/api/enot/fail`,
+      custom_fields: JSON.stringify({
+        steamId: String(steamId),
+        creditedAmount
+      }),
+      comment: `REDMOON balance ${formatRub(creditedAmount)}`,
+      expire: 300
+    })
+  })
+
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok || data.status_check === false || !data?.data?.url) {
+    throw new Error(data.error || "ENOT не вернул ссылку на оплату")
+  }
+
+  return data.data
+}
+
+const verifyEnotSignature = (payload, signature) => {
+  const normalizedSignature = String(signature || "").toLowerCase()
+  const sortedPayload = sortObjectKeys(payload)
+  const expectedSignatures = [
+    JSON.stringify(sortedPayload),
+    stringifyJsonWithSpaces(sortedPayload)
+  ].map((signedJson) => createHmacSha256(signedJson, ENOT_WEBHOOK_SECRET).toLowerCase())
+
+  if (!normalizedSignature || !expectedSignatures.some((item) => item.length === normalizedSignature.length)) {
+    return false
+  }
+
+  return expectedSignatures.some((expectedSignature) =>
+    expectedSignature.length === normalizedSignature.length &&
+    crypto.timingSafeEqual(Buffer.from(normalizedSignature), Buffer.from(expectedSignature))
+  )
 }
 
 const getDiscountedPrice = (price, discountPercent) => {
@@ -1497,7 +1584,10 @@ app.get("/api/admin/summary", requireAdmin, (req, res) => {
             FROM payments
             WHERE status = 'paid'
               AND amount > 0
-              AND (type = 'freekassa' OR provider = 'freekassa')
+              AND (
+                type IN ('freekassa', 'enot')
+                OR provider IN ('freekassa', 'enot')
+              )
             `,
             (err, row) => {
               if (err) return res.status(500).json({ error: err.message })
@@ -2875,13 +2965,22 @@ app.post("/api/deposit", paymentRateLimiter, (req, res) => {
   const requestUser = getRequestUser(req)
   const amount = Math.floor(toMoneyAmount(req.body.amount))
   const email = String(req.body.email || "").trim()
+  const provider = String(req.body.provider || "freekassa").toLowerCase()
 
   if (!steamId) {
     return res.status(401).json({ error: "Войдите через Steam перед оплатой" })
   }
 
-  if (!FREEKASSA_MERCHANT_ID || !FREEKASSA_SECRET_1 || !FREEKASSA_SECRET_2) {
+  if (!["freekassa", "enot"].includes(provider)) {
+    return res.status(400).json({ error: "Выберите доступный способ оплаты" })
+  }
+
+  if (provider === "freekassa" && (!FREEKASSA_MERCHANT_ID || !FREEKASSA_SECRET_1 || !FREEKASSA_SECRET_2)) {
     return res.status(503).json({ error: "FreeKassa еще не настроена на сервере" })
+  }
+
+  if (provider === "enot" && (!ENOT_SHOP_ID || !ENOT_API_KEY || !ENOT_WEBHOOK_SECRET)) {
+    return res.status(503).json({ error: "ENOT еще не настроен на сервере" })
   }
 
   if (!amount || amount < MIN_DEPOSIT_AMOUNT) {
@@ -2898,9 +2997,10 @@ app.post("/api/deposit", paymentRateLimiter, (req, res) => {
 
   const bonus = getDepositBonus(amount)
   const creditedAmount = getDepositTotal(amount)
+  const providerLabel = provider === "enot" ? "ENOT" : "FreeKassa"
   const note = bonus > 0
-    ? `FreeKassa: ожидает оплату ${formatRub(amount)}, к зачислению ${formatRub(creditedAmount)}`
-    : `FreeKassa: ожидает оплату ${formatRub(amount)}`
+    ? `${providerLabel}: ожидает оплату ${formatRub(amount)}, к зачислению ${formatRub(creditedAmount)}`
+    : `${providerLabel}: ожидает оплату ${formatRub(amount)}`
 
   ensureUser(steamId, requestUser?.displayName || requestUser?.username || "Steam пользователь", (err) => {
     if (err) {
@@ -2919,36 +3019,76 @@ app.post("/api/deposit", paymentRateLimiter, (req, res) => {
         steamId,
         creditedAmount,
         "pending",
-        "freekassa",
+        provider,
         note,
         new Date().toISOString(),
-        "freekassa",
+        provider,
         amount,
         creditedAmount,
         email
       ],
-      function (err) {
+      async function (err) {
         if (err) {
           return res.status(500).json({ error: err.message })
         }
 
         const paymentId = this.lastID
-        const paymentUrl = createFreeKassaPaymentUrl({
-          paymentId,
-          amount,
-          email,
-          steamId
-        })
 
-        res.json({
-          success: true,
-          paymentId,
-          provider: "freekassa",
-          paymentUrl,
-          amount,
-          bonus,
-          creditedAmount
-        })
+        if (provider === "freekassa") {
+          const paymentUrl = createFreeKassaPaymentUrl({
+            paymentId,
+            amount,
+            email,
+            steamId
+          })
+
+          return res.json({
+            success: true,
+            paymentId,
+            provider,
+            paymentUrl,
+            amount,
+            bonus,
+            creditedAmount
+          })
+        }
+
+        try {
+          const invoice = await createEnotInvoice({
+            paymentId,
+            amount,
+            email,
+            steamId,
+            creditedAmount
+          })
+
+          db.run(
+            "UPDATE payments SET providerPaymentId = ? WHERE id = ?",
+            [invoice.id || "", paymentId],
+            (err) => {
+              if (err) {
+                return res.status(500).json({ error: err.message })
+              }
+
+              res.json({
+                success: true,
+                paymentId,
+                provider,
+                providerPaymentId: invoice.id,
+                paymentUrl: invoice.url,
+                amount,
+                bonus,
+                creditedAmount
+              })
+            }
+          )
+        } catch (err) {
+          db.run(
+            "UPDATE payments SET status = ?, note = ? WHERE id = ?",
+            ["failed", `${providerLabel}: ошибка создания платежа`, paymentId]
+          )
+          res.status(502).json({ error: err.message || "Не удалось создать платеж ENOT" })
+        }
       }
     )
   })
@@ -3073,6 +3213,148 @@ app.get("/api/freekassa/success", (req, res) => {
 })
 
 app.get("/api/freekassa/fail", (req, res) => {
+  res.redirect(`${FRONTEND_URL}?payment=cancel`)
+})
+
+app.post("/api/enot/notify", (req, res) => {
+  const payload = req.body || {}
+  const signature = req.get("x-api-sha256-signature")
+  const paymentId = String(payload.order_id || "").trim()
+  const providerPaymentId = String(payload.invoice_id || "")
+  const status = String(payload.status || "").toLowerCase()
+
+  if (!ENOT_WEBHOOK_SECRET) {
+    return res.status(503).json({ error: "ENOT webhook is not configured" })
+  }
+
+  if (!paymentId || !verifyEnotSignature(payload, signature)) {
+    return res.status(400).json({ error: "wrong sign" })
+  }
+
+  if (status !== "success") {
+    db.run(
+      `
+      UPDATE payments
+      SET status = ?, note = ?, providerPaymentId = COALESCE(NULLIF(?, ''), providerPaymentId)
+      WHERE id = ? AND provider = ? AND status = ?
+      `,
+      [
+        status === "refund" ? "refunded" : "failed",
+        `ENOT: платеж ${status || "не оплачен"}`,
+        providerPaymentId,
+        paymentId,
+        "enot",
+        "pending"
+      ],
+      (err) => {
+        if (err) {
+          return res.status(500).json({ error: err.message })
+        }
+
+        res.json({ success: true })
+      }
+    )
+    return
+  }
+
+  db.serialize(() => {
+    db.run("BEGIN IMMEDIATE", (err) => {
+      if (err) {
+        return res.status(500).json({ error: err.message })
+      }
+
+      db.get(
+        "SELECT * FROM payments WHERE id = ? AND provider = ?",
+        [paymentId, "enot"],
+        (err, payment) => {
+          if (err) {
+            db.run("ROLLBACK")
+            return res.status(500).json({ error: err.message })
+          }
+
+          if (!payment) {
+            db.run("ROLLBACK")
+            return res.status(404).json({ error: "payment not found" })
+          }
+
+          if (payment.status === "paid") {
+            db.run("COMMIT", () => res.json({ success: true }))
+            return
+          }
+
+          if (payment.status !== "pending") {
+            db.run("ROLLBACK")
+            return res.status(409).json({ error: "payment is not pending" })
+          }
+
+          const expectedAmount = payment.providerAmount || payment.amount
+
+          if (toKopecks(payload.amount) !== toKopecks(expectedAmount)) {
+            db.run("ROLLBACK")
+            return res.status(400).json({ error: "wrong amount" })
+          }
+
+          const creditedAmount = Number(payment.creditedAmount || payment.amount || 0)
+          const note = payment.providerAmount && payment.providerAmount !== creditedAmount
+            ? `Пополнение ENOT: оплачено ${formatRub(payment.providerAmount)}, зачислено ${formatRub(creditedAmount)}`
+            : `Пополнение ENOT: зачислено ${formatRub(creditedAmount)}`
+
+          db.run(
+            `
+            UPDATE payments
+            SET status = ?, note = ?, providerPaymentId = COALESCE(NULLIF(?, ''), providerPaymentId)
+            WHERE id = ? AND status = ?
+            `,
+            ["paid", note, providerPaymentId, paymentId, "pending"],
+            function (err) {
+              if (err) {
+                db.run("ROLLBACK")
+                return res.status(500).json({ error: err.message })
+              }
+
+              if (this.changes === 0) {
+                db.run("ROLLBACK")
+                return res.status(409).json({ error: "payment already processed" })
+              }
+
+              db.run(
+                `
+                UPDATE users
+                SET balance = balance + ?
+                WHERE steamId = ?
+                `,
+                [creditedAmount, payment.steamId],
+                (err) => {
+                  if (err) {
+                    db.run("ROLLBACK")
+                    return res.status(500).json({ error: err.message })
+                  }
+
+                  db.run("COMMIT", (err) => {
+                    if (err) {
+                      return res.status(500).json({ error: err.message })
+                    }
+
+                    sendDiscordNotification(
+                      `REDMOON: ${payment.steamId} пополнил баланс через ENOT на ${formatRub(creditedAmount)}`
+                    )
+                    res.json({ success: true })
+                  })
+                }
+              )
+            }
+          )
+        }
+      )
+    })
+  })
+})
+
+app.get("/api/enot/success", (req, res) => {
+  res.redirect(`${FRONTEND_URL}?payment=success`)
+})
+
+app.get("/api/enot/fail", (req, res) => {
   res.redirect(`${FRONTEND_URL}?payment=cancel`)
 })
 app.get("/api/test-payment/:id", (req, res) => {

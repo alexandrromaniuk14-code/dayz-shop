@@ -2580,6 +2580,19 @@ align-self: center;
   cursor: not-allowed;
 }
 
+.enot-method-card {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  background:
+    linear-gradient(135deg, rgba(255, 213, 77, 0.15), rgba(255,255,255,0.035)),
+    rgba(255,255,255,0.04);
+}
+
+.enot-method-card strong {
+  color: #ffd54d;
+}
+
 .deposit-method-card img {
   width: min(100%, 215px);
   height: 52px;
