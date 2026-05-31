@@ -4294,8 +4294,11 @@ margin: "0 auto",
                     type="button"
                     onClick={() => setSelectedDepositProvider("enot")}
                   >
-                    <strong>enot.io</strong>
-                    <small>Быстрая оплата</small>
+                    <img
+                      className="enot-logo-image"
+                      src="/enot-logo-white.svg"
+                      alt="enot.io"
+                    />
                   </button>
                   <button className="deposit-method-card disabled" type="button" disabled>
                     <strong>PAYPALYCH</strong>

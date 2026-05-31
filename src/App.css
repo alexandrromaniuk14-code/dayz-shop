@@ -2581,16 +2581,24 @@ align-self: center;
 }
 
 .enot-method-card {
-  flex-direction: column;
-  align-items: flex-start;
   justify-content: center;
   background:
-    linear-gradient(135deg, rgba(255, 213, 77, 0.15), rgba(255,255,255,0.035)),
-    rgba(255,255,255,0.04);
+    radial-gradient(circle at 12% 10%, rgba(255, 214, 10, 0.18), transparent 42%),
+    linear-gradient(135deg, #151720, #0d1019);
+  border-color: rgba(253, 234, 152, 0.26);
 }
 
-.enot-method-card strong {
-  color: #ffd54d;
+.enot-method-card.active {
+  border-color: rgba(253, 234, 152, 0.88);
+  box-shadow:
+    0 0 20px rgba(255, 214, 10, 0.13),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+.deposit-method-card .enot-logo-image {
+  width: min(100%, 188px);
+  height: 56px;
+  object-position: center;
 }
 
 .deposit-method-card img {
