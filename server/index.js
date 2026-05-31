@@ -34,6 +34,7 @@ const legacyUploadsDir = path.join(__dirname, "uploads")
 const renderDiskDir = "/var/data"
 const defaultPersistentDir = fs.existsSync(renderDiskDir) ? renderDiskDir : __dirname
 const uploadsDir = process.env.UPLOADS_DIR || path.join(defaultPersistentDir, "uploads")
+const productsBackupPath = process.env.PRODUCTS_BACKUP_PATH || path.join(defaultPersistentDir, "products-backup.json")
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 0
@@ -117,6 +118,7 @@ const gameDeliveryProductNames = Object.entries(productDeliveryCatalog)
   .map(([productName]) => productName)
 
 fs.mkdirSync(uploadsDir, { recursive: true })
+fs.mkdirSync(path.dirname(productsBackupPath), { recursive: true })
 
 if (uploadsDir !== legacyUploadsDir && fs.existsSync(legacyUploadsDir)) {
   fs.readdirSync(legacyUploadsDir).forEach((filename) => {
@@ -668,6 +670,141 @@ const formatProduct = (product) => ({
   createdAt: product.createdAt,
   updatedAt: product.updatedAt
 })
+
+const writeProductsBackup = (reason = "products_backup") => {
+  db.all(
+    `
+    SELECT *
+    FROM products
+    ORDER BY sortOrder ASC, id ASC
+    `,
+    [],
+    (err, products) => {
+      if (err) {
+        console.log("PRODUCTS BACKUP READ ERROR:", err.message)
+        return
+      }
+
+      const backup = {
+        version: 1,
+        reason,
+        updatedAt: new Date().toISOString(),
+        products: products.map((product) => ({
+          id: product.id,
+          name: product.name,
+          description: product.description || "",
+          category: product.category || "Все для строительства",
+          price: Number(product.price || 0),
+          discountPercent: Number(product.discountPercent || 0),
+          image: normalizeProductImageUrl(product.image),
+          isActive: product.isActive ? 1 : 0,
+          sortOrder: Number(product.sortOrder || 0),
+          createdAt: product.createdAt || null,
+          updatedAt: product.updatedAt || product.createdAt || null
+        }))
+      }
+
+      fs.writeFile(productsBackupPath, JSON.stringify(backup, null, 2), "utf8", (err) => {
+        if (err) {
+          console.log("PRODUCTS BACKUP WRITE ERROR:", err.message)
+        }
+      })
+    }
+  )
+}
+
+const restoreProductsBackup = () => {
+  if (!fs.existsSync(productsBackupPath)) return
+
+  let backup
+
+  try {
+    backup = JSON.parse(fs.readFileSync(productsBackupPath, "utf8"))
+  } catch (err) {
+    console.log("PRODUCTS BACKUP PARSE ERROR:", err.message)
+    return
+  }
+
+  const products = Array.isArray(backup.products) ? backup.products : []
+
+  if (!products.length) return
+
+  db.get("SELECT COUNT(*) AS count FROM products", [], (err, row) => {
+    if (err) {
+      console.log("PRODUCTS BACKUP COUNT ERROR:", err.message)
+      return
+    }
+
+    if (Number(row?.count || 0) > 0) {
+      writeProductsBackup("startup_sync")
+      return
+    }
+
+    db.serialize(() => {
+      db.run("BEGIN IMMEDIATE")
+
+      const statement = db.prepare(
+        `
+        INSERT INTO products (
+          name, description, category, price, discountPercent,
+          image, isActive, sortOrder, createdAt, updatedAt
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET
+          description = excluded.description,
+          category = excluded.category,
+          price = excluded.price,
+          discountPercent = excluded.discountPercent,
+          image = excluded.image,
+          isActive = excluded.isActive,
+          sortOrder = excluded.sortOrder,
+          updatedAt = excluded.updatedAt
+        `
+      )
+
+      const now = new Date().toISOString()
+
+      products.forEach((product, index) => {
+        const name = String(product.name || "").trim()
+        const price = Number(product.price || 0)
+
+        if (!name || price <= 0) return
+
+        statement.run(
+          name,
+          String(product.description || ""),
+          String(product.category || "Все для строительства"),
+          price,
+          Math.min(Math.max(Number(product.discountPercent || 0), 0), 100),
+          normalizeProductImageUrl(product.image),
+          product.isActive === 0 ? 0 : 1,
+          Number(product.sortOrder ?? index),
+          product.createdAt || now,
+          product.updatedAt || now
+        )
+      })
+
+      statement.finalize((err) => {
+        if (err) {
+          db.run("ROLLBACK")
+          console.log("PRODUCTS BACKUP RESTORE ERROR:", err.message)
+          return
+        }
+
+        db.run("COMMIT", (err) => {
+          if (err) {
+            console.log("PRODUCTS BACKUP COMMIT ERROR:", err.message)
+            return
+          }
+
+          console.log(`PRODUCTS RESTORED FROM BACKUP: ${productsBackupPath}`)
+        })
+      })
+    })
+  })
+}
+
+restoreProductsBackup()
 
 const getDeliveryForProduct = (productName) => {
   const delivery = productDeliveryCatalog[productName]
@@ -1716,6 +1853,7 @@ app.post("/api/admin/products", requireAdmin, adminMutationRateLimiter, upload.s
         updatedAt: createdAt
       }))
       writeAdminLog(req, "product_create", name, { price, discountPercent, category })
+      writeProductsBackup("product_create")
     }
   )
 })
@@ -1767,6 +1905,7 @@ app.put("/api/admin/products/:id", requireAdmin, adminMutationRateLimiter, uploa
           }
 
           writeAdminLog(req, "product_update", name, { price, discountPercent, category, isActive })
+          writeProductsBackup("product_update")
           res.json(formatProduct(product))
         })
       }
@@ -1788,6 +1927,7 @@ app.delete("/api/admin/products/:id", requireAdmin, adminMutationRateLimiter, (r
       }
 
       writeAdminLog(req, "product_hide", `product:${req.params.id}`)
+      writeProductsBackup("product_hide")
       res.json({ success: true })
     }
   )
@@ -1814,6 +1954,7 @@ app.post("/api/admin/products/sort", requireAdmin, adminMutationRateLimiter, (re
       }
 
       writeAdminLog(req, "product_sort", "products", `${items.length} товаров`)
+      writeProductsBackup("product_sort")
       res.json({ success: true })
     })
   })

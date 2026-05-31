@@ -20,6 +20,7 @@ server/*.sqlite-*
 
 # Runtime product uploads are stored by the backend.
 server/uploads/*
+server/products-backup.json
 
 # Editor directories and files
 .vscode/*
