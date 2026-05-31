@@ -35,6 +35,10 @@ const renderDiskDir = "/var/data"
 const defaultPersistentDir = fs.existsSync(renderDiskDir) ? renderDiskDir : __dirname
 const uploadsDir = process.env.UPLOADS_DIR || path.join(defaultPersistentDir, "uploads")
 const productsBackupPath = process.env.PRODUCTS_BACKUP_PATH || path.join(defaultPersistentDir, "products-backup.json")
+const GITHUB_PRODUCTS_TOKEN = process.env.GITHUB_PRODUCTS_TOKEN || process.env.GITHUB_TOKEN || ""
+const GITHUB_PRODUCTS_REPOSITORY = process.env.GITHUB_PRODUCTS_REPOSITORY || process.env.GITHUB_REPOSITORY || "alexandrromaniuk14-code/dayz-shop"
+const GITHUB_PRODUCTS_BRANCH = process.env.GITHUB_PRODUCTS_BRANCH || "main"
+const GITHUB_PRODUCTS_PATH = process.env.GITHUB_PRODUCTS_PATH || "server/data/admin-products.json"
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 0
@@ -172,7 +176,19 @@ const normalizeProductImageUrl = (image) => {
   return value
 }
 
-const getImageUrl = (file) => file ? `${BACKEND_PUBLIC_URL}/uploads/${file.filename}` : null
+const getUploadedImageValue = (file) => {
+  if (!file) return null
+
+  const value = `data:${file.mimetype};base64,${fs.readFileSync(file.path).toString("base64")}`
+
+  fs.unlink(file.path, (err) => {
+    if (err) {
+      console.log("UPLOAD CLEANUP ERROR:", err.message)
+    }
+  })
+
+  return value
+}
 
 const requestText = (url) =>
   new Promise((resolve, reject) => {
@@ -671,6 +687,72 @@ const formatProduct = (product) => ({
   updatedAt: product.updatedAt
 })
 
+const getGithubProductsUrl = () =>
+  `https://api.github.com/repos/${GITHUB_PRODUCTS_REPOSITORY}/contents/${encodeURIComponent(GITHUB_PRODUCTS_PATH).replace(/%2F/g, "/")}`
+
+const getGithubProductsHeaders = () => ({
+  Accept: "application/vnd.github+json",
+  Authorization: `Bearer ${GITHUB_PRODUCTS_TOKEN}`,
+  "Content-Type": "application/json",
+  "User-Agent": "redmoon-dayz-shop"
+})
+
+const fetchGithubProductsBackup = async () => {
+  if (!GITHUB_PRODUCTS_TOKEN) return null
+
+  const response = await fetch(`${getGithubProductsUrl()}?ref=${encodeURIComponent(GITHUB_PRODUCTS_BRANCH)}`, {
+    headers: getGithubProductsHeaders()
+  })
+
+  if (response.status === 404) return null
+
+  if (!response.ok) {
+    throw new Error(`GitHub backup fetch failed: ${response.status}`)
+  }
+
+  const data = await response.json()
+  const content = Buffer.from(String(data.content || ""), "base64").toString("utf8")
+
+  return {
+    sha: data.sha,
+    backup: JSON.parse(content)
+  }
+}
+
+const pushGithubProductsBackup = async (backup) => {
+  if (!GITHUB_PRODUCTS_TOKEN) return
+
+  let sha = null
+
+  try {
+    const currentBackup = await fetchGithubProductsBackup()
+    sha = currentBackup?.sha || null
+  } catch (err) {
+    console.log("GITHUB PRODUCTS BACKUP SHA ERROR:", err.message)
+  }
+
+  const body = {
+    message: `Update admin products (${backup.reason || "sync"})`,
+    content: Buffer.from(JSON.stringify(backup, null, 2), "utf8").toString("base64"),
+    branch: GITHUB_PRODUCTS_BRANCH
+  }
+
+  if (sha) {
+    body.sha = sha
+  }
+
+  const response = await fetch(getGithubProductsUrl(), {
+    method: "PUT",
+    headers: getGithubProductsHeaders(),
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "")
+    throw new Error(`GitHub backup push failed: ${response.status} ${text}`)
+  }
+}
+
 const writeProductsBackup = (reason = "products_backup") => {
   db.all(
     `
@@ -709,12 +791,28 @@ const writeProductsBackup = (reason = "products_backup") => {
           console.log("PRODUCTS BACKUP WRITE ERROR:", err.message)
         }
       })
+
+      pushGithubProductsBackup(backup).catch((err) => {
+        console.log("GITHUB PRODUCTS BACKUP WRITE ERROR:", err.message)
+      })
     }
   )
 }
 
 const restoreProductsBackup = () => {
-  if (!fs.existsSync(productsBackupPath)) return
+  if (!fs.existsSync(productsBackupPath)) {
+    fetchGithubProductsBackup()
+      .then((remoteBackup) => {
+        if (!remoteBackup?.backup) return
+
+        fs.writeFileSync(productsBackupPath, JSON.stringify(remoteBackup.backup, null, 2))
+        restoreProductsBackup()
+      })
+      .catch((err) => {
+        console.log("GITHUB PRODUCTS BACKUP RESTORE ERROR:", err.message)
+      })
+    return
+  }
 
   let backup
 
@@ -1813,7 +1911,7 @@ app.post("/api/admin/products", requireAdmin, adminMutationRateLimiter, upload.s
   const price = Number(req.body.price || 0)
   const discountPercent = Math.min(Math.max(Number(req.body.discountPercent || 0), 0), 100)
   const sortOrder = Math.max(Number(req.body.sortOrder || 0), 0)
-  const image = getImageUrl(req.file)
+  const image = getUploadedImageValue(req.file)
   const createdAt = new Date().toISOString()
 
   if (!name || !category || !price || price <= 0) {
@@ -1867,7 +1965,7 @@ app.put("/api/admin/products/:id", requireAdmin, adminMutationRateLimiter, uploa
   const discountPercent = Math.min(Math.max(Number(req.body.discountPercent || 0), 0), 100)
   const sortOrder = Math.max(Number(req.body.sortOrder || 0), 0)
   const isActive = req.body.isActive === "0" ? 0 : 1
-  const image = getImageUrl(req.file)
+  const image = getUploadedImageValue(req.file)
   const updatedAt = new Date().toISOString()
 
   if (!name || !category || !price || price <= 0) {
