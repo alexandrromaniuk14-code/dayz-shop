@@ -39,6 +39,10 @@ const GITHUB_PRODUCTS_TOKEN = process.env.GITHUB_PRODUCTS_TOKEN || process.env.G
 const GITHUB_PRODUCTS_REPOSITORY = process.env.GITHUB_PRODUCTS_REPOSITORY || process.env.GITHUB_REPOSITORY || "alexandrromaniuk14-code/dayz-shop"
 const GITHUB_PRODUCTS_BRANCH = process.env.GITHUB_PRODUCTS_BRANCH || "main"
 const GITHUB_PRODUCTS_PATH = process.env.GITHUB_PRODUCTS_PATH || "server/data/admin-products.json"
+const promocodesBackupPath = process.env.PROMOCODES_BACKUP_PATH || path.join(defaultPersistentDir, "promocodes-backup.json")
+const GITHUB_PROMOCODES_PATH = process.env.GITHUB_PROMOCODES_PATH || "server/data/promocodes.json"
+const promocodeRedemptionsBackupPath = process.env.PROMOCODE_REDEMPTIONS_BACKUP_PATH || path.join(defaultPersistentDir, "promocode-redemptions-backup.json")
+const GITHUB_PROMOCODE_REDEMPTIONS_PATH = process.env.GITHUB_PROMOCODE_REDEMPTIONS_PATH || "server/data/promocode-redemptions.json"
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 0
@@ -123,6 +127,8 @@ const gameDeliveryProductNames = Object.entries(productDeliveryCatalog)
 
 fs.mkdirSync(uploadsDir, { recursive: true })
 fs.mkdirSync(path.dirname(productsBackupPath), { recursive: true })
+fs.mkdirSync(path.dirname(promocodesBackupPath), { recursive: true })
+fs.mkdirSync(path.dirname(promocodeRedemptionsBackupPath), { recursive: true })
 
 if (uploadsDir !== legacyUploadsDir && fs.existsSync(legacyUploadsDir)) {
   fs.readdirSync(legacyUploadsDir).forEach((filename) => {
@@ -687,8 +693,10 @@ const formatProduct = (product) => ({
   updatedAt: product.updatedAt
 })
 
-const getGithubProductsUrl = () =>
-  `https://api.github.com/repos/${GITHUB_PRODUCTS_REPOSITORY}/contents/${encodeURIComponent(GITHUB_PRODUCTS_PATH).replace(/%2F/g, "/")}`
+const getGithubContentUrl = (filePath) =>
+  `https://api.github.com/repos/${GITHUB_PRODUCTS_REPOSITORY}/contents/${encodeURIComponent(filePath).replace(/%2F/g, "/")}`
+
+const getGithubProductsUrl = () => getGithubContentUrl(GITHUB_PRODUCTS_PATH)
 
 const getGithubProductsHeaders = () => ({
   Accept: "application/vnd.github+json",
@@ -750,6 +758,118 @@ const pushGithubProductsBackup = async (backup) => {
   if (!response.ok) {
     const text = await response.text().catch(() => "")
     throw new Error(`GitHub backup push failed: ${response.status} ${text}`)
+  }
+}
+
+const fetchGithubPromocodeRedemptionsBackup = async () => {
+  if (!GITHUB_PRODUCTS_TOKEN) return null
+
+  const response = await fetch(`${getGithubContentUrl(GITHUB_PROMOCODE_REDEMPTIONS_PATH)}?ref=${encodeURIComponent(GITHUB_PRODUCTS_BRANCH)}`, {
+    headers: getGithubProductsHeaders()
+  })
+
+  if (response.status === 404) return null
+
+  if (!response.ok) {
+    throw new Error(`GitHub promocode backup fetch failed: ${response.status}`)
+  }
+
+  const data = await response.json()
+  const content = Buffer.from(String(data.content || ""), "base64").toString("utf8")
+
+  return {
+    sha: data.sha,
+    backup: JSON.parse(content)
+  }
+}
+
+const pushGithubPromocodeRedemptionsBackup = async (backup) => {
+  if (!GITHUB_PRODUCTS_TOKEN) return
+
+  let sha = null
+
+  try {
+    const currentBackup = await fetchGithubPromocodeRedemptionsBackup()
+    sha = currentBackup?.sha || null
+  } catch (err) {
+    console.log("GITHUB PROMOCODE BACKUP SHA ERROR:", err.message)
+  }
+
+  const body = {
+    message: `Update promocode redemptions (${backup.reason || "sync"})`,
+    content: Buffer.from(JSON.stringify(backup, null, 2), "utf8").toString("base64"),
+    branch: GITHUB_PRODUCTS_BRANCH
+  }
+
+  if (sha) {
+    body.sha = sha
+  }
+
+  const response = await fetch(getGithubContentUrl(GITHUB_PROMOCODE_REDEMPTIONS_PATH), {
+    method: "PUT",
+    headers: getGithubProductsHeaders(),
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "")
+    throw new Error(`GitHub promocode backup push failed: ${response.status} ${text}`)
+  }
+}
+
+const fetchGithubPromocodesBackup = async () => {
+  if (!GITHUB_PRODUCTS_TOKEN) return null
+
+  const response = await fetch(`${getGithubContentUrl(GITHUB_PROMOCODES_PATH)}?ref=${encodeURIComponent(GITHUB_PRODUCTS_BRANCH)}`, {
+    headers: getGithubProductsHeaders()
+  })
+
+  if (response.status === 404) return null
+
+  if (!response.ok) {
+    throw new Error(`GitHub promocodes backup fetch failed: ${response.status}`)
+  }
+
+  const data = await response.json()
+  const content = Buffer.from(String(data.content || ""), "base64").toString("utf8")
+
+  return {
+    sha: data.sha,
+    backup: JSON.parse(content)
+  }
+}
+
+const pushGithubPromocodesBackup = async (backup) => {
+  if (!GITHUB_PRODUCTS_TOKEN) return
+
+  let sha = null
+
+  try {
+    const currentBackup = await fetchGithubPromocodesBackup()
+    sha = currentBackup?.sha || null
+  } catch (err) {
+    console.log("GITHUB PROMOCODES BACKUP SHA ERROR:", err.message)
+  }
+
+  const body = {
+    message: `Update promocodes (${backup.reason || "sync"})`,
+    content: Buffer.from(JSON.stringify(backup, null, 2), "utf8").toString("base64"),
+    branch: GITHUB_PRODUCTS_BRANCH
+  }
+
+  if (sha) {
+    body.sha = sha
+  }
+
+  const response = await fetch(getGithubContentUrl(GITHUB_PROMOCODES_PATH), {
+    method: "PUT",
+    headers: getGithubProductsHeaders(),
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "")
+    throw new Error(`GitHub promocodes backup push failed: ${response.status} ${text}`)
   }
 }
 
@@ -903,6 +1023,217 @@ const restoreProductsBackup = () => {
 }
 
 restoreProductsBackup()
+
+const writePromocodesBackup = (reason = "promocodes_backup") => {
+  db.all(
+    `
+    SELECT code, amount, maxUses, expiresAt, isActive, createdAt, updatedAt
+    FROM promocodes
+    ORDER BY id ASC
+    `,
+    [],
+    (err, rows) => {
+      if (err) {
+        console.log("PROMOCODES BACKUP READ ERROR:", err.message)
+        return
+      }
+
+      const backup = {
+        version: 1,
+        reason,
+        updatedAt: new Date().toISOString(),
+        promocodes: rows.map((row) => ({
+          code: String(row.code || "").toUpperCase(),
+          amount: Number(row.amount || 0),
+          maxUses: Math.max(Number(row.maxUses || 1), 1),
+          expiresAt: row.expiresAt || null,
+          isActive: row.isActive ? 1 : 0,
+          createdAt: row.createdAt || null,
+          updatedAt: row.updatedAt || row.createdAt || null
+        })).filter((row) => row.code && row.amount > 0)
+      }
+
+      fs.writeFile(promocodesBackupPath, JSON.stringify(backup, null, 2), "utf8", (err) => {
+        if (err) {
+          console.log("PROMOCODES BACKUP WRITE ERROR:", err.message)
+        }
+      })
+
+      pushGithubPromocodesBackup(backup).catch((err) => {
+        console.log("GITHUB PROMOCODES BACKUP WRITE ERROR:", err.message)
+      })
+    }
+  )
+}
+
+const restorePromocodesBackup = () => {
+  if (!fs.existsSync(promocodesBackupPath)) {
+    fetchGithubPromocodesBackup()
+      .then((remoteBackup) => {
+        if (!remoteBackup?.backup) return
+
+        fs.writeFileSync(promocodesBackupPath, JSON.stringify(remoteBackup.backup, null, 2))
+        restorePromocodesBackup()
+      })
+      .catch((err) => {
+        console.log("GITHUB PROMOCODES BACKUP RESTORE ERROR:", err.message)
+      })
+    return
+  }
+
+  let backup
+
+  try {
+    backup = JSON.parse(fs.readFileSync(promocodesBackupPath, "utf8"))
+  } catch (err) {
+    console.log("PROMOCODES BACKUP PARSE ERROR:", err.message)
+    return
+  }
+
+  const codes = Array.isArray(backup.promocodes) ? backup.promocodes : []
+
+  if (!codes.length) return
+
+  db.serialize(() => {
+    const statement = db.prepare(
+      `
+      INSERT INTO promocodes (code, amount, maxUses, expiresAt, isActive, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(code) DO UPDATE SET
+        amount = excluded.amount,
+        maxUses = excluded.maxUses,
+        expiresAt = excluded.expiresAt,
+        isActive = excluded.isActive,
+        updatedAt = excluded.updatedAt
+      `
+    )
+    const now = new Date().toISOString()
+
+    codes.forEach((promo) => {
+      const code = String(promo.code || "").trim().toUpperCase()
+      const amount = Math.floor(Number(promo.amount || 0))
+
+      if (!code || amount <= 0) return
+
+      statement.run(
+        code,
+        amount,
+        Math.max(Math.floor(Number(promo.maxUses || 1)), 1),
+        promo.expiresAt || null,
+        promo.isActive === 0 ? 0 : 1,
+        promo.createdAt || now,
+        promo.updatedAt || now
+      )
+    })
+
+    statement.finalize((err) => {
+      if (err) {
+        console.log("PROMOCODES BACKUP RESTORE ERROR:", err.message)
+      }
+    })
+  })
+}
+
+restorePromocodesBackup()
+
+const writePromocodeRedemptionsBackup = (reason = "promocode_redemptions_backup") => {
+  db.all(
+    `
+    SELECT steamId, code, amount, createdAt
+    FROM promocode_redemptions
+    ORDER BY id ASC
+    `,
+    [],
+    (err, rows) => {
+      if (err) {
+        console.log("PROMOCODE BACKUP READ ERROR:", err.message)
+        return
+      }
+
+      const backup = {
+        version: 1,
+        reason,
+        updatedAt: new Date().toISOString(),
+        redemptions: rows.map((row) => ({
+          steamId: String(row.steamId || ""),
+          code: String(row.code || "").toUpperCase(),
+          amount: Number(row.amount || 0),
+          createdAt: row.createdAt || null
+        })).filter((row) => row.steamId && row.code)
+      }
+
+      fs.writeFile(promocodeRedemptionsBackupPath, JSON.stringify(backup, null, 2), "utf8", (err) => {
+        if (err) {
+          console.log("PROMOCODE BACKUP WRITE ERROR:", err.message)
+        }
+      })
+
+      pushGithubPromocodeRedemptionsBackup(backup).catch((err) => {
+        console.log("GITHUB PROMOCODE BACKUP WRITE ERROR:", err.message)
+      })
+    }
+  )
+}
+
+const restorePromocodeRedemptionsBackup = () => {
+  if (!fs.existsSync(promocodeRedemptionsBackupPath)) {
+    fetchGithubPromocodeRedemptionsBackup()
+      .then((remoteBackup) => {
+        if (!remoteBackup?.backup) return
+
+        fs.writeFileSync(promocodeRedemptionsBackupPath, JSON.stringify(remoteBackup.backup, null, 2))
+        restorePromocodeRedemptionsBackup()
+      })
+      .catch((err) => {
+        console.log("GITHUB PROMOCODE BACKUP RESTORE ERROR:", err.message)
+      })
+    return
+  }
+
+  let backup
+
+  try {
+    backup = JSON.parse(fs.readFileSync(promocodeRedemptionsBackupPath, "utf8"))
+  } catch (err) {
+    console.log("PROMOCODE BACKUP PARSE ERROR:", err.message)
+    return
+  }
+
+  const redemptions = Array.isArray(backup.redemptions) ? backup.redemptions : []
+
+  if (!redemptions.length) return
+
+  db.serialize(() => {
+    const statement = db.prepare(
+      `
+      INSERT OR IGNORE INTO promocode_redemptions (steamId, code, amount, createdAt)
+      VALUES (?, ?, ?, ?)
+      `
+    )
+
+    redemptions.forEach((redemption) => {
+      const steamId = String(redemption.steamId || "").trim()
+      const code = String(redemption.code || "").trim().toUpperCase()
+
+      if (!steamId || !code) return
+
+      statement.run(
+        steamId,
+        code,
+        Number(redemption.amount || 0),
+        redemption.createdAt || new Date().toISOString()
+      )
+    })
+
+    statement.finalize((err) => {
+      if (err) {
+        console.log("PROMOCODE BACKUP RESTORE ERROR:", err.message)
+      }
+    })
+  })
+}
+
+restorePromocodeRedemptionsBackup()
 
 const getDeliveryForProduct = (productName) => {
   const delivery = productDeliveryCatalog[productName]
@@ -1395,6 +1726,14 @@ app.use(session({
 app.use(passport.initialize())
 app.use(passport.session())
 
+app.get("/api/health", (req, res) => {
+  res.json({
+    ok: true,
+    service: "redmoon-dayz-shop",
+    time: new Date().toISOString()
+  })
+})
+
 passport.serializeUser((user, done) => {
   done(null, user)
 })
@@ -1630,6 +1969,7 @@ app.post("/api/promocodes/redeem", promocodeRateLimiter, (req, res) => {
                     amount,
                     balance: userRow?.balance || 0
                   })
+                  writePromocodeRedemptionsBackup("promocode_redeem")
                 }
               )
             }
@@ -2532,6 +2872,7 @@ app.post("/api/admin/promocodes", requireAdmin, adminMutationRateLimiter, (req, 
       }
 
       writeAdminLog(req, "promocode_create", code, { amount, maxUses, expiresAt })
+      writePromocodesBackup("promocode_create")
       res.json({ id: this.lastID, code, amount, maxUses, expiresAt, isActive: 1 })
     }
   )
@@ -2546,6 +2887,7 @@ app.patch("/api/admin/promocodes/:id", requireAdmin, adminMutationRateLimiter, (
     (err) => {
       if (err) return res.status(500).json({ error: err.message })
       writeAdminLog(req, "promocode_toggle", `promocode:${req.params.id}`, { isActive })
+      writePromocodesBackup("promocode_toggle")
       res.json({ success: true })
     }
   )

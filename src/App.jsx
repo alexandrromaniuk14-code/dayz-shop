@@ -621,6 +621,27 @@ const FOOTER_NOTES = [
 
 const getStoredAuthToken = () => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
 
+const decodeAuthTokenPayload = (token) => {
+  try {
+    const payload = String(token || "").split(".")[0]
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
+    const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=")
+
+    return JSON.parse(atob(padded))
+  } catch {
+    return null
+  }
+}
+
+const getCachedAuthUser = () => {
+  const payload = decodeAuthTokenPayload(getStoredAuthToken())
+
+  if (!payload?.steamId && !payload?.id) return null
+  if (payload.exp && payload.exp < Date.now()) return null
+
+  return normalizeUser(payload)
+}
+
 const getPageFromCurrentPath = () => {
   if (typeof window === "undefined") return "shop"
 
@@ -803,6 +824,7 @@ const [transferSteamId, setTransferSteamId] = useState("")
 const [transferAmount, setTransferAmount] = useState("")
 const [purchaseHistory, setPurchaseHistory] = useState([])
 const [paymentHistory, setPaymentHistory] = useState([])
+const [isAuthStarting, setIsAuthStarting] = useState(false)
 const [isTransferSubmitting, setIsTransferSubmitting] = useState(false)
 const [rouletteItems, setRouletteItems] = useState([])
 const [rouletteOffset, setRouletteOffset] = useState(0)
@@ -1401,6 +1423,11 @@ useEffect(() => {
   const authTokenFromUrl = params.get("authToken")
   const steamIdFromUrl = params.get("steamId")
   const storedSteamIdBeforeAuth = localStorage.getItem(STEAM_ID_STORAGE_KEY)
+  const cachedAuthUser = getCachedAuthUser()
+
+  if (cachedAuthUser) {
+    setUser(cachedAuthUser)
+  }
 
   if (authTokenFromUrl) {
     localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, authTokenFromUrl)
@@ -1482,7 +1509,11 @@ useEffect(() => {
       })
       .catch((err) => {
         console.log("USER FALLBACK LOAD ERROR:", err)
-        clearAccountState()
+        const cachedUser = getCachedAuthUser()
+
+        if (cachedUser) {
+          setUser(cachedUser)
+        }
       })
 
     loadPurchaseHistory(steamId)
@@ -1528,7 +1559,6 @@ useEffect(() => {
     })
     .catch((err) => {
       console.log("USER BALANCE LOAD ERROR:", err)
-      setBalance(0)
     })
 
   loadPurchaseHistory(normalizedUser.id)
@@ -1538,10 +1568,15 @@ useEffect(() => {
     .catch((err) => {
       console.log("USER LOAD ERROR:", err)
       const savedSteamId = steamIdFromUrl || localStorage.getItem(STEAM_ID_STORAGE_KEY)
+      const cachedUser = getCachedAuthUser()
+
+      if (cachedUser) {
+        setUser(cachedUser)
+      }
 
       if (savedSteamId && getStoredAuthToken()) {
         loadUserBySteamId(savedSteamId)
-      } else {
+      } else if (!cachedUser) {
         clearAccountState()
       }
     })
@@ -1869,6 +1904,22 @@ const handlePromoRedeem = () => {
     .catch((err) => {
       console.log("PROMOCODE ERROR:", err)
       showProfileNotice("Ошибка при активации промокода", "error")
+    })
+}
+
+const startSteamAuth = () => {
+  if (isAuthStarting) return
+
+  setIsAuthStarting(true)
+
+  fetch(`${API_BASE_URL}/api/health`, {
+    credentials: "include"
+  })
+    .catch((err) => {
+      console.log("AUTH WARMUP ERROR:", err)
+    })
+    .finally(() => {
+      window.location.href = `${API_BASE_URL}/auth/steam`
     })
 }
 
@@ -2926,11 +2977,10 @@ paddingTop: "120px"
 ) : (
   <button
     className="login-button"
-    onClick={() => {
-      window.location.href = "https://dayz-shop.onrender.com/auth/steam"
-    }}
+    onClick={startSteamAuth}
+    disabled={isAuthStarting}
   >
-    Авторизоваться
+    {isAuthStarting ? "Подключаем Steam..." : "Авторизоваться"}
   </button>
 )}
 </nav>
@@ -2943,11 +2993,10 @@ paddingTop: "120px"
         <h2>Доступ только для владельца</h2>
         <p>Войди через Steam аккаунт с ID 76561198722502186.</p>
         <button
-          onClick={() => {
-            window.location.href = "https://dayz-shop.onrender.com/auth/steam"
-          }}
+          onClick={startSteamAuth}
+          disabled={isAuthStarting}
         >
-          Авторизоваться
+          {isAuthStarting ? "Подключаем Steam..." : "Авторизоваться"}
         </button>
       </section>
     ) : (
@@ -3837,9 +3886,6 @@ paddingTop: "120px"
                 >
                   Применить
                 </button>
-              </div>
-              <div className="profile-promo-hint">
-                Доступные тестовые промокоды: RedMoonStart, RedMoonSummer, BAK10. Каждый можно активировать один раз на аккаунт.
               </div>
             </>
           )}
