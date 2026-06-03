@@ -19,6 +19,8 @@ import codelockImg from "./images/codelock.jpg";
 import brevna10Img from "./images/brevna10.jpg";
 import doskiImg from "./images/doski.jpg";
 import to4ilkaImg from "./images/to4ilka.jpg";
+import mercedesW123Img from "./images/mercedes-w123.jpg";
+import gaz66Img from "./images/gaz-66.jpg";
 
 const getNumericPrice = (value) => Number(String(value ?? "").replace(/[^\d.-]/g, "")) || 0
 const formatRubPrice = (value) => `${getNumericPrice(value)} RUB`
@@ -59,6 +61,20 @@ const products = [
     priceValue: 250,
      image: gunterImg,
      category: "Машины и запчасти",
+  },
+  {
+    name: "Мерседес W123",
+    price: formatRubPrice(450),
+    priceValue: 450,
+    image: mercedesW123Img,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Шишига (газ-66)",
+    price: formatRubPrice(550),
+    priceValue: 550,
+    image: gaz66Img,
+    category: "Машины и запчасти",
   },
   {
     name: "Кувалда",
