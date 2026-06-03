@@ -19,6 +19,8 @@ const camelKeyMap = {
   provideramount: "providerAmount",
   creditedamount: "creditedAmount",
   customeremail: "customerEmail",
+  classname: "className",
+  claimid: "claimId",
   totalreplenished: "totalReplenished"
 }
 
@@ -59,6 +61,8 @@ const pgIdentifierMap = {
   providerAmount: "provideramount",
   creditedAmount: "creditedamount",
   customerEmail: "customeremail",
+  className: "classname",
+  claimId: "claimid",
   totalReplenished: "totalreplenished"
 }
 
@@ -187,10 +191,22 @@ class PgDatabase {
         price INTEGER,
         quantity INTEGER DEFAULT 1,
         createdat TEXT,
-        status TEXT DEFAULT 'Ожидает выдачи',
-        updatedat TEXT
+        status TEXT DEFAULT 'pending',
+        updatedat TEXT,
+        classname TEXT,
+        type TEXT,
+        stack INTEGER DEFAULT 0,
+        attachments TEXT DEFAULT '[]',
+        claimid TEXT
       )
     `)
+
+    await this.pool.query("ALTER TABLE purchases ADD COLUMN IF NOT EXISTS classname TEXT")
+    await this.pool.query("ALTER TABLE purchases ADD COLUMN IF NOT EXISTS type TEXT")
+    await this.pool.query("ALTER TABLE purchases ADD COLUMN IF NOT EXISTS stack INTEGER DEFAULT 0")
+    await this.pool.query("ALTER TABLE purchases ADD COLUMN IF NOT EXISTS attachments TEXT DEFAULT '[]'")
+    await this.pool.query("ALTER TABLE purchases ADD COLUMN IF NOT EXISTS claimid TEXT")
+    await this.pool.query("ALTER TABLE purchases ALTER COLUMN status SET DEFAULT 'pending'")
 
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS roulette_drops (
@@ -440,8 +456,13 @@ const createSqliteDatabase = () => {
         price INTEGER,
         quantity INTEGER DEFAULT 1,
         createdAt TEXT,
-        status TEXT DEFAULT 'Ожидает выдачи',
-        updatedAt TEXT
+        status TEXT DEFAULT 'pending',
+        updatedAt TEXT,
+        className TEXT,
+        type TEXT,
+        stack INTEGER DEFAULT 0,
+        attachments TEXT DEFAULT '[]',
+        claimId TEXT
       )
     `)
 
@@ -578,6 +599,11 @@ const createSqliteDatabase = () => {
       const hasCreatedAt = columns.some((col) => col.name === "createdAt")
       const hasStatus = columns.some((col) => col.name === "status")
       const hasUpdatedAt = columns.some((col) => col.name === "updatedAt")
+      const hasClassName = columns.some((col) => col.name === "className")
+      const hasType = columns.some((col) => col.name === "type")
+      const hasStack = columns.some((col) => col.name === "stack")
+      const hasAttachments = columns.some((col) => col.name === "attachments")
+      const hasClaimId = columns.some((col) => col.name === "claimId")
 
       if (!hasQuantity) {
         db.run("ALTER TABLE purchases ADD COLUMN quantity INTEGER DEFAULT 1", (err) => {
@@ -594,7 +620,7 @@ const createSqliteDatabase = () => {
       }
 
       if (!hasStatus) {
-        db.run("ALTER TABLE purchases ADD COLUMN status TEXT DEFAULT 'Ожидает выдачи'", (err) => {
+        db.run("ALTER TABLE purchases ADD COLUMN status TEXT DEFAULT 'pending'", (err) => {
           if (err) console.log("Ошибка добавления purchases.status:", err.message)
           else console.log("Колонка purchases.status добавлена")
         })
@@ -604,6 +630,41 @@ const createSqliteDatabase = () => {
         db.run("ALTER TABLE purchases ADD COLUMN updatedAt TEXT", (err) => {
           if (err) console.log("Ошибка добавления purchases.updatedAt:", err.message)
           else console.log("Колонка purchases.updatedAt добавлена")
+        })
+      }
+
+      if (!hasClassName) {
+        db.run("ALTER TABLE purchases ADD COLUMN className TEXT", (err) => {
+          if (err) console.log("Ошибка добавления purchases.className:", err.message)
+          else console.log("Колонка purchases.className добавлена")
+        })
+      }
+
+      if (!hasType) {
+        db.run("ALTER TABLE purchases ADD COLUMN type TEXT", (err) => {
+          if (err) console.log("Ошибка добавления purchases.type:", err.message)
+          else console.log("Колонка purchases.type добавлена")
+        })
+      }
+
+      if (!hasStack) {
+        db.run("ALTER TABLE purchases ADD COLUMN stack INTEGER DEFAULT 0", (err) => {
+          if (err) console.log("Ошибка добавления purchases.stack:", err.message)
+          else console.log("Колонка purchases.stack добавлена")
+        })
+      }
+
+      if (!hasAttachments) {
+        db.run("ALTER TABLE purchases ADD COLUMN attachments TEXT DEFAULT '[]'", (err) => {
+          if (err) console.log("Ошибка добавления purchases.attachments:", err.message)
+          else console.log("Колонка purchases.attachments добавлена")
+        })
+      }
+
+      if (!hasClaimId) {
+        db.run("ALTER TABLE purchases ADD COLUMN claimId TEXT", (err) => {
+          if (err) console.log("Ошибка добавления purchases.claimId:", err.message)
+          else console.log("Колонка purchases.claimId добавлена")
         })
       }
     })
