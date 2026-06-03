@@ -84,13 +84,16 @@ const productCatalog = {
   "Топорик": 35,
   "Кирка": 35,
   "Флагшток": 300,
+  "Codelock": 100,
+  "Бревна х10": 90,
+  "Доски 10шт": 50,
+  "Точильный камень": 60,
   [ROULETTE_PRODUCT_NAME]: ROULETTE_PRICE,
   "VIP-слот": 500
 }
 
-const productNames = Object.keys(productCatalog)
 const productDeliveryCatalog = {
-  [productNames[0]]: {
+  "Gunter-2": {
     type: "vehicle",
     className: "Hatchback_02",
     attachments: [
@@ -106,20 +109,24 @@ const productDeliveryCatalog = {
       { className: "HeadlightH7", quantity: 2 }
     ]
   },
-  [productNames[1]]: { type: "item", className: "SledgeHammer" },
-  [productNames[2]]: { type: "item", className: "NailBox" },
-  [productNames[3]]: { type: "item", className: "Pliers" },
-  [productNames[4]]: { type: "item", className: "Rope" },
-  [productNames[5]]: { type: "item", className: "MetalWire" },
-  [productNames[6]]: { type: "item", className: "Shovel" },
-  [productNames[7]]: { type: "item", className: "BM_BuildingBag" },
-  [productNames[8]]: { type: "item", className: "MetalPlate", quantity: 10 },
-  [productNames[9]]: { type: "item", className: "Barrel_Green" },
-  [productNames[10]]: { type: "item", className: "Hatchet" },
-  [productNames[11]]: { type: "item", className: "Pickaxe" },
-  [productNames[12]]: { type: "item", className: "TerritoryFlagKit" },
+  "Кувалда": { type: "item", className: "SledgeHammer" },
+  "Коробка гвоздей": { type: "item", className: "NailBox" },
+  "Плоскогубцы": { type: "item", className: "Pliers" },
+  "Веревка": { type: "item", className: "Rope" },
+  "Проволока": { type: "item", className: "MetalWire" },
+  "Лопата": { type: "item", className: "Shovel" },
+  "Строительный рюзкак": { type: "item", className: "BM_BuildingBag" },
+  "10 листов металла": { type: "item", className: "MetalPlate", quantity: 10 },
+  "Бочка": { type: "item", className: "Barrel_Green" },
+  "Топорик": { type: "item", className: "Hatchet" },
+  "Кирка": { type: "item", className: "Pickaxe" },
+  "Флагшток": { type: "item", className: "TerritoryFlagKit" },
+  "Codelock": { type: "item", className: "CodeLock" },
+  "Бревна х10": { type: "item", className: "WoodenLog", quantity: 10 },
+  "Доски 10шт": { type: "item", className: "WoodenPlank", quantity: 10 },
+  "Точильный камень": { type: "item", className: "SharpeningStone" },
   [ROULETTE_PRODUCT_NAME]: { type: "service", className: "" },
-  [productNames[14]]: { type: "service", className: "" }
+  "VIP-слот": { type: "service", className: "" }
 }
 const gameDeliveryProductNames = Object.entries(productDeliveryCatalog)
   .filter(([, delivery]) => delivery?.type && delivery.type !== "service")

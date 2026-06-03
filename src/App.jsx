@@ -15,6 +15,10 @@ import lopataImg from "./images/lopata.webp";
 import provolokaImg from "./images/provoloka.webp";
 import ploskiImg from "./images/ploski.webp";
 import verevkaImg from "./images/verevka.webp";
+import codelockImg from "./images/codelock.jpg";
+import brevna10Img from "./images/brevna10.jpg";
+import doskiImg from "./images/doski.jpg";
+import to4ilkaImg from "./images/to4ilka.jpg";
 
 const getNumericPrice = (value) => Number(String(value ?? "").replace(/[^\d.-]/g, "")) || 0
 const formatRubPrice = (value) => `${getNumericPrice(value)} RUB`
@@ -140,6 +144,34 @@ const products = [
   priceValue: 300,
   image: flagImage
 },
+  {
+    name: "Codelock",
+    price: formatRubPrice(100),
+    priceValue: 100,
+    image: codelockImg,
+    category: "Все для строительства",
+  },
+  {
+    name: "Бревна х10",
+    price: formatRubPrice(90),
+    priceValue: 90,
+    image: brevna10Img,
+    category: "Все для строительства",
+  },
+  {
+    name: "Доски 10шт",
+    price: formatRubPrice(50),
+    priceValue: 50,
+    image: doskiImg,
+    category: "Все для строительства",
+  },
+  {
+    name: "Точильный камень",
+    price: formatRubPrice(60),
+    priceValue: 60,
+    image: to4ilkaImg,
+    category: "Все для строительства",
+  },
   {
     name: "Рулетка REDMOON",
     description: "Бесплатная рулетка с случайным предметом из магазина. Доступна раз в 24 часа.",
