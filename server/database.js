@@ -147,6 +147,9 @@ class PgDatabase {
   constructor(connectionString) {
     const { Pool } = require("pg")
 
+    this.provider = "PostgreSQL"
+    this.persistent = true
+    this.storageLabel = "DATABASE_URL"
     this.pool = new Pool({
       connectionString,
       max: 1,
@@ -436,6 +439,10 @@ const createSqliteDatabase = () => {
       console.log("База данных подключена")
     }
   })
+
+  db.provider = "SQLite"
+  db.persistent = dbPath !== legacyDbPath || fs.existsSync(renderDiskDir)
+  db.storageLabel = db.persistent ? "persistent_sqlite" : "app_directory_sqlite"
 
   db.serialize(() => {
     db.run(`

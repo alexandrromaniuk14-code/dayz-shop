@@ -43,6 +43,17 @@ const promocodesBackupPath = process.env.PROMOCODES_BACKUP_PATH || path.join(def
 const GITHUB_PROMOCODES_PATH = process.env.GITHUB_PROMOCODES_PATH || "server/data/promocodes.json"
 const promocodeRedemptionsBackupPath = process.env.PROMOCODE_REDEMPTIONS_BACKUP_PATH || path.join(defaultPersistentDir, "promocode-redemptions-backup.json")
 const GITHUB_PROMOCODE_REDEMPTIONS_PATH = process.env.GITHUB_PROMOCODE_REDEMPTIONS_PATH || "server/data/promocode-redemptions.json"
+const getProductsStorageStatus = () => {
+  const persistentDatabase = db.provider === "PostgreSQL" || Boolean(db.persistent)
+
+  return {
+    database: db.provider || "unknown",
+    persistentDatabase,
+    productsBackupFile: fs.existsSync(productsBackupPath),
+    githubBackupConfigured: Boolean(GITHUB_PRODUCTS_TOKEN),
+    productsPermanent: persistentDatabase || Boolean(GITHUB_PRODUCTS_TOKEN)
+  }
+}
 const rouletteDropClients = new Set()
 const ROULETTE_PRODUCT_NAME = "Рулетка REDMOON"
 const ROULETTE_PRICE = 0
@@ -1914,10 +1925,19 @@ app.use(passport.initialize())
 app.use(passport.session())
 
 app.get("/api/health", (req, res) => {
+  const storage = getProductsStorageStatus()
+
   res.json({
     ok: true,
     service: "redmoon-dayz-shop",
-    time: new Date().toISOString()
+    time: new Date().toISOString(),
+    productsPermanent: storage.productsPermanent,
+    storage: {
+      database: storage.database,
+      persistentDatabase: storage.persistentDatabase,
+      productsBackupFile: storage.productsBackupFile,
+      githubBackupConfigured: storage.githubBackupConfigured
+    }
   })
 })
 
@@ -2410,6 +2430,20 @@ app.delete("/api/admin/summary/payments-total", requireAdmin, adminMutationRateL
 
     writeAdminLog(req, "payments_total_reset", "admin_summary")
     res.json({ success: true, paymentsTotalMode: "auto" })
+  })
+})
+
+app.get("/api/admin/storage", requireAdmin, (req, res) => {
+  db.get("SELECT COUNT(*) AS count FROM products", [], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message })
+
+    res.json({
+      ...getProductsStorageStatus(),
+      productsCount: Number(row?.count || 0),
+      uploadsPersistent: uploadsDir !== legacyUploadsDir || fs.existsSync(renderDiskDir),
+      backupPathConfigured: Boolean(process.env.PRODUCTS_BACKUP_PATH),
+      renderDiskPresent: fs.existsSync(renderDiskDir)
+    })
   })
 })
 
