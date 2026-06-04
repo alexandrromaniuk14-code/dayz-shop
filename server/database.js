@@ -20,6 +20,7 @@ const camelKeyMap = {
   creditedamount: "creditedAmount",
   customeremail: "customerEmail",
   classname: "className",
+  deliverytype: "deliveryType",
   claimid: "claimId",
   totalreplenished: "totalReplenished"
 }
@@ -62,6 +63,7 @@ const pgIdentifierMap = {
   creditedAmount: "creditedamount",
   customerEmail: "customeremail",
   className: "classname",
+  deliveryType: "deliverytype",
   claimId: "claimid",
   totalReplenished: "totalreplenished"
 }
@@ -259,10 +261,19 @@ class PgDatabase {
         image TEXT,
         isactive INTEGER DEFAULT 1,
         sortorder INTEGER DEFAULT 0,
+        deliverytype TEXT DEFAULT 'item',
+        classname TEXT,
+        stack INTEGER DEFAULT 0,
+        attachments TEXT DEFAULT '[]',
         createdat TEXT,
         updatedat TEXT
       )
     `)
+
+    await this.pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS deliverytype TEXT DEFAULT 'item'")
+    await this.pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS classname TEXT")
+    await this.pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS stack INTEGER DEFAULT 0")
+    await this.pool.query("ALTER TABLE products ADD COLUMN IF NOT EXISTS attachments TEXT DEFAULT '[]'")
 
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS admin_logs (
@@ -517,6 +528,10 @@ const createSqliteDatabase = () => {
         image TEXT,
         isActive INTEGER DEFAULT 1,
         sortOrder INTEGER DEFAULT 0,
+        deliveryType TEXT DEFAULT 'item',
+        className TEXT,
+        stack INTEGER DEFAULT 0,
+        attachments TEXT DEFAULT '[]',
         createdAt TEXT,
         updatedAt TEXT
       )
@@ -743,6 +758,10 @@ const createSqliteDatabase = () => {
 
       const hasDiscountPercent = columns.some((col) => col.name === "discountPercent")
       const hasSortOrder = columns.some((col) => col.name === "sortOrder")
+      const hasDeliveryType = columns.some((col) => col.name === "deliveryType")
+      const hasClassName = columns.some((col) => col.name === "className")
+      const hasStack = columns.some((col) => col.name === "stack")
+      const hasAttachments = columns.some((col) => col.name === "attachments")
 
       if (!hasDiscountPercent) {
         db.run("ALTER TABLE products ADD COLUMN discountPercent INTEGER DEFAULT 0", (err) => {
@@ -755,6 +774,34 @@ const createSqliteDatabase = () => {
         db.run("ALTER TABLE products ADD COLUMN sortOrder INTEGER DEFAULT 0", (err) => {
           if (err) console.log("Ошибка добавления products.sortOrder:", err.message)
           else console.log("Колонка products.sortOrder добавлена")
+        })
+      }
+
+      if (!hasDeliveryType) {
+        db.run("ALTER TABLE products ADD COLUMN deliveryType TEXT DEFAULT 'item'", (err) => {
+          if (err) console.log("products.deliveryType add error:", err.message)
+          else console.log("products.deliveryType column added")
+        })
+      }
+
+      if (!hasClassName) {
+        db.run("ALTER TABLE products ADD COLUMN className TEXT", (err) => {
+          if (err) console.log("products.className add error:", err.message)
+          else console.log("products.className column added")
+        })
+      }
+
+      if (!hasStack) {
+        db.run("ALTER TABLE products ADD COLUMN stack INTEGER DEFAULT 0", (err) => {
+          if (err) console.log("products.stack add error:", err.message)
+          else console.log("products.stack column added")
+        })
+      }
+
+      if (!hasAttachments) {
+        db.run("ALTER TABLE products ADD COLUMN attachments TEXT DEFAULT '[]'", (err) => {
+          if (err) console.log("products.attachments add error:", err.message)
+          else console.log("products.attachments column added")
         })
       }
     })

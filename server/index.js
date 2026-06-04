@@ -720,6 +720,10 @@ const formatProduct = (product) => ({
   image: normalizeProductImageUrl(product.image),
   isActive: Boolean(product.isActive),
   sortOrder: Number(product.sortOrder || 0),
+  deliveryType: product.deliveryType || product.type || "item",
+  className: product.className || "",
+  stack: Number(product.stack || 0),
+  attachments: parseAttachments(product.attachments),
   createdAt: product.createdAt,
   updatedAt: product.updatedAt
 })
@@ -932,6 +936,10 @@ const writeProductsBackup = (reason = "products_backup") => {
           image: normalizeProductImageUrl(product.image),
           isActive: product.isActive ? 1 : 0,
           sortOrder: Number(product.sortOrder || 0),
+          deliveryType: product.deliveryType || product.type || "item",
+          className: product.className || "",
+          stack: Number(product.stack || 0),
+          attachments: parseAttachments(product.attachments),
           createdAt: product.createdAt || null,
           updatedAt: product.updatedAt || product.createdAt || null
         }))
@@ -996,9 +1004,10 @@ const restoreProductsBackup = () => {
         `
         INSERT INTO products (
           name, description, category, price, discountPercent,
-          image, isActive, sortOrder, createdAt, updatedAt
+          image, isActive, sortOrder, deliveryType, className, stack,
+          attachments, createdAt, updatedAt
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
           description = excluded.description,
           category = excluded.category,
@@ -1007,6 +1016,10 @@ const restoreProductsBackup = () => {
           image = excluded.image,
           isActive = excluded.isActive,
           sortOrder = excluded.sortOrder,
+          deliveryType = excluded.deliveryType,
+          className = excluded.className,
+          stack = excluded.stack,
+          attachments = excluded.attachments,
           updatedAt = excluded.updatedAt
         `
       )
@@ -1028,6 +1041,10 @@ const restoreProductsBackup = () => {
           normalizeProductImageUrl(product.image),
           product.isActive === 0 ? 0 : 1,
           Number(product.sortOrder ?? index),
+          product.deliveryType || product.type || "item",
+          String(product.className || "").trim(),
+          Number(product.stack || 0),
+          JSON.stringify(parseAttachments(product.attachments)),
           product.createdAt || now,
           product.updatedAt || now
         )
@@ -1054,6 +1071,44 @@ const restoreProductsBackup = () => {
 }
 
 restoreProductsBackup()
+
+const syncProductDeliveryCatalogToProducts = () => {
+  const entries = Object.entries(productDeliveryCatalog)
+    .filter(([, delivery]) => delivery?.type && delivery.type !== "service" && delivery.className)
+
+  if (!entries.length) return
+
+  const statement = db.prepare(
+    `
+    UPDATE products
+    SET deliveryType = ?, className = ?, stack = ?, attachments = ?, updatedAt = ?
+    WHERE name = ? AND (className IS NULL OR className = '')
+    `
+  )
+  const updatedAt = new Date().toISOString()
+
+  entries.forEach(([productName, delivery]) => {
+    statement.run(
+      delivery.type || "item",
+      delivery.className || "",
+      Number(delivery.stack || 0),
+      JSON.stringify(Array.isArray(delivery.attachments) ? delivery.attachments : []),
+      updatedAt,
+      productName
+    )
+  })
+
+  statement.finalize((err) => {
+    if (err) {
+      console.log("PRODUCT DELIVERY SYNC ERROR:", err.message)
+      return
+    }
+
+    writeProductsBackup("delivery_catalog_sync")
+  })
+}
+
+setTimeout(syncProductDeliveryCatalogToProducts, 1000)
 
 const writePromocodesBackup = (reason = "promocodes_backup") => {
   db.all(
@@ -1266,7 +1321,26 @@ const restorePromocodeRedemptionsBackup = () => {
 
 restorePromocodeRedemptionsBackup()
 
-const getDeliveryForProduct = (productName) => {
+const normalizeProductDelivery = (product) => {
+  const className = String(product?.className || "").trim()
+  const type = String(product?.deliveryType || product?.type || "item").trim()
+
+  if (!className || type === "service") return null
+
+  return {
+    className,
+    type: type || "item",
+    quantity: Number(product?.deliveryQuantity || product?.quantity || 1),
+    stack: Number(product?.stack || 0),
+    attachments: parseAttachments(product?.attachments)
+  }
+}
+
+const getDeliveryForProduct = (productName, productRecord = null) => {
+  const productDelivery = normalizeProductDelivery(productRecord)
+
+  if (productDelivery) return productDelivery
+
   const delivery = productDeliveryCatalog[productName]
 
   if (!delivery || delivery.type === "service") return null
@@ -1286,7 +1360,7 @@ const normalizeGameStatus = (status) => {
   return status || "pending"
 }
 
-const parseAttachments = (value) => {
+function parseAttachments(value) {
   if (Array.isArray(value)) return value
   if (!value) return []
 
@@ -1298,8 +1372,8 @@ const parseAttachments = (value) => {
   }
 }
 
-const createPurchaseDeliverySnapshot = (productName, purchaseQuantity = 1) => {
-  const delivery = getDeliveryForProduct(productName)
+const createPurchaseDeliverySnapshot = (productName, purchaseQuantity = 1, productRecord = null) => {
+  const delivery = getDeliveryForProduct(productName, productRecord)
   const quantity = Math.max(Number(purchaseQuantity || 1), 1)
 
   if (!delivery) {
@@ -1343,6 +1417,12 @@ const formatGamePurchase = (purchase) => {
 }
 
 const getProductPrice = (productName, callback) => {
+  getProductForPurchase(productName, (err, product) => {
+    callback(err, product?.price || null)
+  })
+}
+
+const getProductForPurchase = (productName, callback) => {
   if (productName === ROULETTE_PRODUCT_NAME) {
     callback(null, null)
     return
@@ -1351,13 +1431,20 @@ const getProductPrice = (productName, callback) => {
   const staticPrice = productCatalog[productName]
 
   if (staticPrice) {
-    callback(null, staticPrice)
+    callback(null, {
+      name: productName,
+      price: staticPrice,
+      deliveryType: productDeliveryCatalog[productName]?.type || "",
+      className: productDeliveryCatalog[productName]?.className || "",
+      stack: productDeliveryCatalog[productName]?.stack || 0,
+      attachments: productDeliveryCatalog[productName]?.attachments || []
+    })
     return
   }
 
   db.get(
     `
-    SELECT price, discountPercent
+    SELECT name, price, discountPercent, deliveryType, className, stack, attachments
     FROM products
     WHERE name = ? AND isActive = 1
     `,
@@ -1368,7 +1455,15 @@ const getProductPrice = (productName, callback) => {
         return
       }
 
-      callback(null, getDiscountedPrice(product?.price, product?.discountPercent))
+      if (!product) {
+        callback(null, null)
+        return
+      }
+
+      callback(null, {
+        ...product,
+        price: getDiscountedPrice(product.price, product.discountPercent)
+      })
     }
   )
 }
@@ -1379,7 +1474,7 @@ const normalizeCartItems = (items, callback) => {
 
   db.all(
     `
-    SELECT name, price, discountPercent
+    SELECT name, price, discountPercent, deliveryType, className, stack, attachments
     FROM products
     WHERE name IN (${productNames.map(() => "?").join(",") || "NULL"}) AND isActive = 1
     `,
@@ -1390,9 +1485,12 @@ const normalizeCartItems = (items, callback) => {
         return
       }
 
-      const dynamicPrices = new Map(rows.map((product) => [
+      const dynamicProducts = new Map(rows.map((product) => [
         product.name,
-        getDiscountedPrice(product.price, product.discountPercent)
+        {
+          ...product,
+          price: getDiscountedPrice(product.price, product.discountPercent)
+        }
       ]))
 
       items.forEach((item) => {
@@ -1402,10 +1500,21 @@ const normalizeCartItems = (items, callback) => {
           return
         }
 
-        const price = productCatalog[productName] || dynamicPrices.get(productName)
+        const productInfo = productCatalog[productName]
+          ? {
+              name: productName,
+              price: productCatalog[productName],
+              deliveryType: productDeliveryCatalog[productName]?.type || "",
+              className: productDeliveryCatalog[productName]?.className || "",
+              stack: productDeliveryCatalog[productName]?.stack || 0,
+              attachments: productDeliveryCatalog[productName]?.attachments || []
+            }
+          : dynamicProducts.get(productName)
+        const price = productInfo?.price
         const quantity = Math.max(Number(item.quantity || 1), 1)
+        const deliverySnapshot = createPurchaseDeliverySnapshot(productName, quantity, productInfo)
 
-        if (!productName || !price || !Number.isInteger(quantity)) {
+        if (!productName || !price || !Number.isInteger(quantity) || !deliverySnapshot.className || !deliverySnapshot.type) {
           return
         }
 
@@ -1413,7 +1522,8 @@ const normalizeCartItems = (items, callback) => {
         mergedItems.set(productName, {
           productName,
           price,
-          quantity: currentQuantity + quantity
+          quantity: currentQuantity + quantity,
+          productInfo
         })
       })
 
@@ -2329,6 +2439,10 @@ app.post("/api/admin/products", requireAdmin, adminMutationRateLimiter, upload.s
   const discountPercent = Math.min(Math.max(Number(req.body.discountPercent || 0), 0), 100)
   const sortOrder = Math.max(Number(req.body.sortOrder || 0), 0)
   const image = getUploadedImageValue(req.file)
+  const deliveryType = String(req.body.deliveryType || "item").trim() || "item"
+  const className = String(req.body.className || "").trim()
+  const stack = Math.max(Number(req.body.stack || 0), 0)
+  const attachments = JSON.stringify(parseAttachments(req.body.attachments))
   const createdAt = new Date().toISOString()
 
   if (!name || !category || !price || price <= 0) {
@@ -2341,10 +2455,13 @@ app.post("/api/admin/products", requireAdmin, adminMutationRateLimiter, upload.s
 
   db.run(
     `
-    INSERT INTO products (name, description, category, price, discountPercent, image, isActive, sortOrder, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+    INSERT INTO products (
+      name, description, category, price, discountPercent, image, isActive,
+      sortOrder, deliveryType, className, stack, attachments, createdAt, updatedAt
+    )
+    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
     `,
-    [name, description, category, price, discountPercent, image, sortOrder, createdAt, createdAt],
+    [name, description, category, price, discountPercent, image, sortOrder, deliveryType, className, stack, attachments, createdAt, createdAt],
     function (err) {
       if (err) {
         if (err.message.includes("UNIQUE")) {
@@ -2364,6 +2481,10 @@ app.post("/api/admin/products", requireAdmin, adminMutationRateLimiter, upload.s
         image,
         isActive: 1,
         sortOrder,
+        deliveryType,
+        className,
+        stack,
+        attachments,
         createdAt,
         updatedAt: createdAt
       }))
@@ -2383,6 +2504,10 @@ app.put("/api/admin/products/:id", requireAdmin, adminMutationRateLimiter, uploa
   const sortOrder = Math.max(Number(req.body.sortOrder || 0), 0)
   const isActive = req.body.isActive === "0" ? 0 : 1
   const image = getUploadedImageValue(req.file)
+  const deliveryType = String(req.body.deliveryType || "item").trim() || "item"
+  const className = String(req.body.className || "").trim()
+  const stack = Math.max(Number(req.body.stack || 0), 0)
+  const attachments = JSON.stringify(parseAttachments(req.body.attachments))
   const updatedAt = new Date().toISOString()
 
   if (!name || !category || !price || price <= 0) {
@@ -2401,10 +2526,12 @@ app.put("/api/admin/products/:id", requireAdmin, adminMutationRateLimiter, uploa
     db.run(
       `
       UPDATE products
-      SET name = ?, description = ?, category = ?, price = ?, discountPercent = ?, image = ?, isActive = ?, sortOrder = ?, updatedAt = ?
+      SET name = ?, description = ?, category = ?, price = ?, discountPercent = ?,
+          image = ?, isActive = ?, sortOrder = ?, deliveryType = ?, className = ?,
+          stack = ?, attachments = ?, updatedAt = ?
       WHERE id = ?
       `,
-      [name, description, category, price, discountPercent, image || currentProduct.image, isActive, sortOrder, updatedAt, id],
+      [name, description, category, price, discountPercent, image || currentProduct.image, isActive, sortOrder, deliveryType, className, stack, attachments, updatedAt, id],
       (err) => {
         if (err) {
           if (err.message.includes("UNIQUE")) {
@@ -3229,13 +3356,20 @@ app.post("/api/purchase", purchaseRateLimiter, (req, res) => {
     return res.status(400).json({ error: "Некорректный товар" })
   }
 
-  getProductPrice(productName, (err, productPrice) => {
+  getProductForPurchase(productName, (err, productInfo) => {
     if (err) {
       return res.status(500).json({ error: err.message })
     }
 
-    if (!productPrice) {
+    if (!productInfo?.price) {
       return res.status(400).json({ error: "Некорректный товар" })
+    }
+
+    const productPrice = productInfo.price
+    const deliverySnapshot = createPurchaseDeliverySnapshot(productName, 1, productInfo)
+
+    if (!deliverySnapshot.className || !deliverySnapshot.type) {
+      return res.status(400).json({ error: "Товар не настроен для выдачи в игре" })
     }
 
     ensureUser(
@@ -3287,7 +3421,6 @@ app.post("/api/purchase", purchaseRateLimiter, (req, res) => {
                 }
 
                 const createdAt = new Date().toISOString()
-                const deliverySnapshot = createPurchaseDeliverySnapshot(productName, 1)
 
                 db.run(
                   `
@@ -3439,7 +3572,7 @@ app.post("/api/purchase/cart", purchaseRateLimiter, (req, res) => {
                     return
                   }
 
-                  const deliverySnapshot = createPurchaseDeliverySnapshot(item.productName, item.quantity)
+                  const deliverySnapshot = createPurchaseDeliverySnapshot(item.productName, item.quantity, item.productInfo)
 
                   db.run(
                     `
@@ -3555,7 +3688,7 @@ app.post("/api/roulette/spin", purchaseRateLimiter, (req, res) => {
         }
 
         const createdAt = new Date().toISOString()
-        const deliverySnapshot = createPurchaseDeliverySnapshot(prize.name, 1)
+        const deliverySnapshot = createPurchaseDeliverySnapshot(prize.name, 1, prize)
 
         db.serialize(() => {
           db.run("BEGIN IMMEDIATE")

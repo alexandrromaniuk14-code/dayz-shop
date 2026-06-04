@@ -1013,6 +1013,10 @@ const [adminProductForm, setAdminProductForm] = useState({
   price: "",
   discountPercent: "",
   sortOrder: "",
+  deliveryType: "item",
+  className: "",
+  stack: "",
+  attachments: "",
   image: null,
   imagePreview: "",
   isActive: "1"
@@ -1073,6 +1077,10 @@ const resetAdminProductForm = () => {
     price: "",
     discountPercent: "",
     sortOrder: "",
+    deliveryType: "item",
+    className: "",
+    stack: "",
+    attachments: "",
     image: null,
     imagePreview: "",
     isActive: "1"
@@ -2506,6 +2514,10 @@ const handleAdminProductSubmit = (event) => {
   formData.append("price", adminProductForm.price)
   formData.append("discountPercent", adminProductForm.discountPercent.trim() === "" ? "0" : adminProductForm.discountPercent)
   formData.append("sortOrder", adminProductForm.sortOrder || "0")
+  formData.append("deliveryType", adminProductForm.deliveryType)
+  formData.append("className", adminProductForm.className)
+  formData.append("stack", adminProductForm.stack || "0")
+  formData.append("attachments", adminProductForm.attachments || "[]")
   formData.append("isActive", adminProductForm.isActive)
 
   if (adminProductForm.image) {
@@ -2665,6 +2677,10 @@ const editAdminProduct = (product) => {
     price: product.oldPriceValue || product.priceValue,
     discountPercent: product.discountPercent ? String(product.discountPercent) : "",
     sortOrder: product.sortOrder ? String(product.sortOrder) : "",
+    deliveryType: product.deliveryType || product.type || "item",
+    className: product.className || "",
+    stack: product.stack ? String(product.stack) : "",
+    attachments: product.attachments ? JSON.stringify(product.attachments, null, 2) : "",
     image: null,
     imagePreview: product.image || "",
     isActive: product.isActive ? "1" : "0"
@@ -3305,6 +3321,36 @@ paddingTop: "120px"
                 )}
               </div>
 
+              <select
+                value={adminProductForm.deliveryType}
+                onChange={(e) => setAdminProductForm({ ...adminProductForm, deliveryType: e.target.value })}
+              >
+                <option value="item">Предмет</option>
+                <option value="vehicle">Транспорт</option>
+                <option value="weapon">Оружие</option>
+                <option value="service">Не выдавать в игре</option>
+              </select>
+
+              <input
+                value={adminProductForm.className}
+                onChange={(e) => setAdminProductForm({ ...adminProductForm, className: e.target.value })}
+                placeholder="Тег в игре / className"
+              />
+
+              <input
+                type="number"
+                min="0"
+                value={adminProductForm.stack}
+                onChange={(e) => setAdminProductForm({ ...adminProductForm, stack: e.target.value })}
+                placeholder="Stack/количество в одном стаке, если нужно"
+              />
+
+              <textarea
+                value={adminProductForm.attachments}
+                onChange={(e) => setAdminProductForm({ ...adminProductForm, attachments: e.target.value })}
+                placeholder='Attachments JSON, если нужны детали: [{"className":"CarBattery","quantity":1}]'
+              />
+
               <textarea
                 value={adminProductForm.description}
                 onChange={(e) => setAdminProductForm({ ...adminProductForm, description: e.target.value })}
@@ -3402,6 +3448,7 @@ paddingTop: "120px"
                         <span>
                           {product.category} · {formatRubPrice(product.priceValue)}
                           {product.discountPercent ? ` · скидка ${product.discountPercent}%` : ""}
+                          {product.className ? ` · ${product.deliveryType || "item"}: ${product.className}` : " · delivery не настроен"}
                           · {product.isActive ? "виден" : "скрыт"}
                         </span>
                       </div>
