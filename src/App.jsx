@@ -21,6 +21,16 @@ import doskiImg from "./images/doski.jpg";
 import to4ilkaImg from "./images/to4ilka.jpg";
 import mercedesW123Img from "./images/mercedes-w123.jpg";
 import gaz66Img from "./images/gaz-66.jpg";
+import gaz2705Img from "./images/gaz-2705.png";
+import defenderImg from "./images/defender.png";
+import humveeImg from "./images/humvee.png";
+import uaz31514Img from "./images/uaz-31514.png";
+import uaz469Img from "./images/uaz-469.png";
+import uaz452Img from "./images/uaz-452.png";
+import volkswagenT4Img from "./images/volkswagen-t4.png";
+import dneprImg from "./images/dnepr.png";
+import quadbikeImg from "./images/quadbike.png";
+import izhImg from "./images/izh.png";
 
 const getNumericPrice = (value) => Number(String(value ?? "").replace(/[^\d.-]/g, "")) || 0
 const formatRubPrice = (value) => `${getNumericPrice(value)} RUB`
@@ -74,6 +84,76 @@ const products = [
     price: formatRubPrice(550),
     priceValue: 550,
     image: gaz66Img,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Газ 2705",
+    price: formatRubPrice(450),
+    priceValue: 450,
+    image: gaz2705Img,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Дефендер",
+    price: formatRubPrice(600),
+    priceValue: 600,
+    image: defenderImg,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Хамви",
+    price: formatRubPrice(600),
+    priceValue: 600,
+    image: humveeImg,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Уаз 31514",
+    price: formatRubPrice(350),
+    priceValue: 350,
+    image: uaz31514Img,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Уаз 469",
+    price: formatRubPrice(300),
+    priceValue: 300,
+    image: uaz469Img,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Буханка",
+    price: formatRubPrice(350),
+    priceValue: 350,
+    image: uaz452Img,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Volkswagen T4",
+    price: formatRubPrice(500),
+    priceValue: 500,
+    image: volkswagenT4Img,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Мотоцикл Днепр",
+    price: formatRubPrice(150),
+    priceValue: 150,
+    image: dneprImg,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Квадроцикл",
+    price: formatRubPrice(150),
+    priceValue: 150,
+    image: quadbikeImg,
+    category: "Машины и запчасти",
+  },
+  {
+    name: "Мотоцикл ИЖ",
+    price: formatRubPrice(150),
+    priceValue: 150,
+    image: izhImg,
     category: "Машины и запчасти",
   },
   {
