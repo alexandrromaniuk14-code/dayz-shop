@@ -1427,6 +1427,16 @@ const formatGamePurchase = (purchase) => {
   }
 }
 
+const getPurchaseClaimQuantity = (purchase) => {
+  const remainingQuantity = Math.max(Number(purchase?.quantity || 1), 1)
+  const catalogDelivery = productDeliveryCatalog[purchase?.product]
+  const catalogQuantity = catalogDelivery && catalogDelivery.type !== "service"
+    ? Math.max(Number(catalogDelivery.quantity || 1), 1)
+    : 1
+
+  return Math.min(catalogQuantity, remainingQuantity)
+}
+
 const getProductPrice = (productName, callback) => {
   getProductForPurchase(productName, (err, product) => {
     callback(err, product?.price || null)
@@ -2818,6 +2828,8 @@ app.get("/api/game/claim/start", requireGameServer, (req, res) => {
             return res.status(409).json({ error: "Purchase has no delivery mapping", claimId: "", item: null })
           }
 
+          item.quantity = getPurchaseClaimQuantity(purchase)
+
           res.json({
             error: "",
             claimId,
@@ -2837,37 +2849,82 @@ app.get("/api/game/claim/finish", requireGameServer, (req, res) => {
   const steamId = getGameSteamId(req)
   const claimId = String(req.query.claimId || "").trim()
   const status = String(req.query.status || "").trim()
-  const nextStatus = status === "success" ? "delivered" : status === "error" ? "pending" : ""
 
-  if (!steamId || !claimId || !nextStatus) {
+  if (!steamId || !claimId || !["success", "error"].includes(status)) {
     return res.status(400).json({ error: "steamId, claimId and status=success|error are required" })
   }
 
-  db.run(
-    `
-    UPDATE purchases
-    SET status = ?, claimId = ?, updatedAt = ?
-    WHERE claimId = ?
-      AND steamId = ?
-      AND status = 'claiming'
-    `,
-    [
-      nextStatus,
-      status === "success" ? claimId : null,
-      new Date().toISOString(),
-      claimId,
-      steamId
-    ],
-    function (err) {
+  db.get(
+    "SELECT * FROM purchases WHERE claimId = ? AND steamId = ? AND status = 'claiming'",
+    [claimId, steamId],
+    (err, purchase) => {
       if (err) {
         return res.status(500).json({ error: err.message })
       }
 
-      if (this.changes === 0) {
+      if (!purchase) {
         return res.status(409).json({ error: "Claim is not active" })
       }
 
-      res.json({ error: "" })
+      const updatedAt = new Date().toISOString()
+
+      if (status === "error") {
+        db.run(
+          "UPDATE purchases SET status = ?, claimId = ?, updatedAt = ? WHERE claimId = ? AND steamId = ? AND status = 'claiming'",
+          ["pending", null, updatedAt, claimId, steamId],
+          function (err) {
+            if (err) {
+              return res.status(500).json({ error: err.message })
+            }
+
+            if (this.changes === 0) {
+              return res.status(409).json({ error: "Claim is not active" })
+            }
+
+            res.json({ error: "", remainingQuantity: Math.max(Number(purchase.quantity || 1), 1) })
+          }
+        )
+        return
+      }
+
+      const currentQuantity = Math.max(Number(purchase.quantity || 1), 1)
+      const claimQuantity = getPurchaseClaimQuantity(purchase)
+      const remainingQuantity = Math.max(currentQuantity - claimQuantity, 0)
+
+      if (remainingQuantity > 0) {
+        db.run(
+          "UPDATE purchases SET quantity = ?, status = ?, claimId = ?, updatedAt = ? WHERE claimId = ? AND steamId = ? AND status = 'claiming'",
+          [remainingQuantity, "pending", null, updatedAt, claimId, steamId],
+          function (err) {
+            if (err) {
+              return res.status(500).json({ error: err.message })
+            }
+
+            if (this.changes === 0) {
+              return res.status(409).json({ error: "Claim is not active" })
+            }
+
+            res.json({ error: "", remainingQuantity })
+          }
+        )
+        return
+      }
+
+      db.run(
+        "UPDATE purchases SET quantity = ?, status = ?, claimId = ?, updatedAt = ? WHERE claimId = ? AND steamId = ? AND status = 'claiming'",
+        [0, "delivered", claimId, updatedAt, claimId, steamId],
+        function (err) {
+          if (err) {
+            return res.status(500).json({ error: err.message })
+          }
+
+          if (this.changes === 0) {
+            return res.status(409).json({ error: "Claim is not active" })
+          }
+
+          res.json({ error: "", remainingQuantity: 0 })
+        }
+      )
     }
   )
 })
