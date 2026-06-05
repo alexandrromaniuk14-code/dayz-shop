@@ -301,6 +301,7 @@ const ROULETTE_PRICE = 0
 const ROULETTE_COOLDOWN_MS = 24 * 60 * 60 * 1000
 const ROULETTE_EXCLUDED_PRODUCT_NAMES = new Set([ROULETTE_PRODUCT_NAME, "VIP-слот"])
 const ADMIN_PAYMENTS_PAGE_SIZE = 25
+const ADMIN_PRODUCTS_PAGE_SIZE = 10
 const API_BASE_URL = "https://dayz-shop.onrender.com"
 const AUTH_TOKEN_STORAGE_KEY = "redmoonAuthToken"
 const STEAM_ID_STORAGE_KEY = "redmoonSteamId"
@@ -971,6 +972,7 @@ const [isPurchasing, setIsPurchasing] = useState(false)
 const [customProducts, setCustomProducts] = useState([])
 const [roulettePrizeProducts, setRoulettePrizeProducts] = useState([])
 const [adminProducts, setAdminProducts] = useState([])
+const [adminProductsPage, setAdminProductsPage] = useState(1)
 const [adminUsers, setAdminUsers] = useState([])
 const [adminPurchases, setAdminPurchases] = useState([])
 const [adminPayments, setAdminPayments] = useState([])
@@ -1797,6 +1799,13 @@ const adminPaymentsFrom = adminPaymentsTotal === 0
   ? 0
   : (adminPaymentsPage - 1) * ADMIN_PAYMENTS_PAGE_SIZE + 1
 const adminPaymentsTo = Math.min(adminPaymentsPage * ADMIN_PAYMENTS_PAGE_SIZE, adminPaymentsTotal)
+const adminProductsTotalPages = Math.max(Math.ceil(adminProducts.length / ADMIN_PRODUCTS_PAGE_SIZE), 1)
+const safeAdminProductsPage = Math.min(adminProductsPage, adminProductsTotalPages)
+const adminProductsFrom = adminProducts.length === 0
+  ? 0
+  : (safeAdminProductsPage - 1) * ADMIN_PRODUCTS_PAGE_SIZE + 1
+const adminProductsTo = Math.min(safeAdminProductsPage * ADMIN_PRODUCTS_PAGE_SIZE, adminProducts.length)
+const visibleAdminProducts = adminProducts.slice(adminProductsFrom ? adminProductsFrom - 1 : 0, adminProductsTo)
 const activeRouletteWeight = adminRouletteItems.reduce(
   (sum, item) => sum + (item.isActive ? Math.max(Number(item.weight || 0), 0) : 0),
   0
@@ -2712,6 +2721,34 @@ const hideAdminProduct = (productId) => {
     })
 }
 
+const deleteAdminProduct = (product) => {
+  const productName = product?.name || "товар"
+
+  if (!window.confirm(`Удалить "${productName}" с сайта навсегда?`)) {
+    return
+  }
+
+  authorizedFetch(`https://dayz-shop.onrender.com/api/admin/products/${product.id}?permanent=1`, {
+    method: "DELETE",
+    credentials: "include"
+  })
+    .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showProfileNotice(data.error || "Не удалось удалить товар", "error")
+        return
+      }
+
+      loadAdminData()
+      refreshProductCatalog()
+      showProfileNotice("Товар удален с сайта")
+    })
+    .catch((err) => {
+      console.log("ADMIN PRODUCT DELETE ERROR:", err)
+      showProfileNotice("Ошибка при удалении товара", "error")
+    })
+}
+
 const moveAdminProduct = (productId, direction) => {
   const currentIndex = adminProducts.findIndex((product) => product.id === productId)
   const nextIndex = currentIndex + direction
@@ -3434,16 +3471,27 @@ paddingTop: "120px"
               </div>
             </form>
 
-            <div className="admin-card">
+            <div className="admin-card admin-products-card">
+              <div className="admin-card-headline">
+                <div>
+                  <h3>Товары на сайте</h3>
+                  {adminProducts.length > 0 && (
+                    <p className="admin-card-note">
+                      Показаны {adminProductsFrom}-{adminProductsTo} из {adminProducts.length}
+                    </p>
+                  )}
+                </div>
+              </div>
               <h3>Товары из админки</h3>
               {adminProducts.length === 0 ? (
                 <div className="profile-empty-state">Пока нет добавленных товаров.</div>
               ) : (
+                <>
                 <div className="admin-products-list">
-                  {adminProducts.map((product) => (
+                  {visibleAdminProducts.map((product) => (
                     <div className="admin-product-row" key={product.id}>
                       <img src={product.image} alt={product.name} />
-                      <div>
+                      <div className="admin-product-info">
                         <strong>{product.name}</strong>
                         <span>
                           {product.category} · {formatRubPrice(product.priceValue)}
@@ -3452,6 +3500,13 @@ paddingTop: "120px"
                           · {product.isActive ? "виден" : "скрыт"}
                         </span>
                       </div>
+                      <div className="admin-product-actions">
+                        <button type="button" onClick={() => moveAdminProduct(product.id, -1)}>↑</button>
+                        <button type="button" onClick={() => moveAdminProduct(product.id, 1)}>↓</button>
+                        <button type="button" onClick={() => editAdminProduct(product)}>Изменить</button>
+                        <button type="button" onClick={() => hideAdminProduct(product.id)}>Скрыть</button>
+                        <button type="button" className="danger" onClick={() => deleteAdminProduct(product)}>Удалить</button>
+                      </div>
                       <button onClick={() => moveAdminProduct(product.id, -1)}>↑</button>
                       <button onClick={() => moveAdminProduct(product.id, 1)}>↓</button>
                       <button onClick={() => editAdminProduct(product)}>Изм.</button>
@@ -3459,6 +3514,26 @@ paddingTop: "120px"
                     </div>
                   ))}
                 </div>
+                {adminProductsTotalPages > 1 && (
+                  <div className="admin-pagination">
+                    <button
+                      type="button"
+                      disabled={safeAdminProductsPage <= 1}
+                      onClick={() => setAdminProductsPage((page) => Math.max(page - 1, 1))}
+                    >
+                      Назад
+                    </button>
+                    <span>Страница {safeAdminProductsPage} из {adminProductsTotalPages}</span>
+                    <button
+                      type="button"
+                      disabled={safeAdminProductsPage >= adminProductsTotalPages}
+                      onClick={() => setAdminProductsPage((page) => Math.min(page + 1, adminProductsTotalPages))}
+                    >
+                      Вперед
+                    </button>
+                  </div>
+                )}
+                </>
               )}
             </div>
           </div>

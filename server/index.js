@@ -2590,6 +2590,19 @@ app.put("/api/admin/products/:id", requireAdmin, adminMutationRateLimiter, uploa
 })
 
 app.delete("/api/admin/products/:id", requireAdmin, adminMutationRateLimiter, (req, res) => {
+  if (req.query.permanent === "1" || req.query.permanent === "true") {
+    db.run("DELETE FROM products WHERE id = ?", [req.params.id], (err) => {
+      if (err) {
+        return res.status(500).json({ error: err.message })
+      }
+
+      writeAdminLog(req, "product_delete", `product:${req.params.id}`)
+      writeProductsBackup("product_delete")
+      res.json({ success: true, deleted: true })
+    })
+    return
+  }
+
   db.run(
     `
     UPDATE products
