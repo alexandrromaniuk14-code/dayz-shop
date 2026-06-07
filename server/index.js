@@ -224,6 +224,20 @@ const normalizeProductImageUrl = (image) => {
   return value
 }
 
+const isInlineProductImage = (image) => /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(image || ""))
+
+const getProductImageUrl = (product) => {
+  const image = normalizeProductImageUrl(product?.image)
+
+  if (!image) return ""
+
+  if (!isInlineProductImage(image)) return image
+
+  const version = encodeURIComponent(product?.updatedAt || product?.createdAt || product?.id || "1")
+
+  return `${BACKEND_PUBLIC_URL}/api/products/${product.id}/image?v=${version}`
+}
+
 const getUploadedImageValue = (file) => {
   if (!file) return null
 
@@ -728,7 +742,7 @@ const formatProduct = (product) => ({
   discountPercent: Number(product.discountPercent || 0),
   price: formatRub(getDiscountedPrice(product.price, product.discountPercent)),
   priceValue: getDiscountedPrice(product.price, product.discountPercent),
-  image: normalizeProductImageUrl(product.image),
+  image: getProductImageUrl(product),
   isActive: Boolean(product.isActive),
   sortOrder: Number(product.sortOrder || 0),
   deliveryType: product.deliveryType || product.type || "item",
@@ -1951,6 +1965,42 @@ app.get("/api/health", (req, res) => {
   })
 })
 
+app.get("/api/products/:id/image", (req, res) => {
+  const id = Number(req.params.id || 0)
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).send("Invalid product image id")
+  }
+
+  db.get("SELECT image FROM products WHERE id = ?", [id], (err, product) => {
+    if (err) {
+      return res.status(500).send(err.message)
+    }
+
+    const image = normalizeProductImageUrl(product?.image)
+
+    if (!image) {
+      return res.status(404).send("Product image not found")
+    }
+
+    if (!isInlineProductImage(image)) {
+      return res.redirect(image)
+    }
+
+    const match = image.match(/^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i)
+
+    if (!match) {
+      return res.status(415).send("Unsupported product image")
+    }
+
+    const bytes = Buffer.from(match[2], "base64")
+
+    res.setHeader("Content-Type", match[1])
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable")
+    res.send(bytes)
+  })
+})
+
 passport.serializeUser((user, done) => {
   done(null, user)
 })
@@ -2280,7 +2330,7 @@ app.get("/api/admin/roulette", requireAdmin, (req, res) => {
           price: formatRub(item.priceValue),
           priceValue: item.priceValue,
           category: product.category || "Все для строительства",
-          image: normalizeProductImageUrl(product.image),
+          image: getProductImageUrl(product),
           isActive: item.isRouletteActive,
           weight: item.rouletteWeight
         }
